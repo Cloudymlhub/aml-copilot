@@ -142,18 +142,13 @@ class AMLCopilot:
         self.config = agents_config
         
         # Create RedisSaver checkpointer for chat continuity
-        try:
-            from langgraph.checkpoint.redis import RedisSaver
-            
-            self.checkpointer = RedisSaver.from_conn_info(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db_checkpoints,
-            )
-        except ImportError:
-            # RedisSaver not installed yet - will be added in Phase 5.1
-            print("Warning: langgraph-checkpoint-redis not installed. Running without checkpointing.")
-            self.checkpointer = None
+        from langgraph.checkpoint.redis import RedisSaver
+        
+        self.checkpointer = RedisSaver.from_conn_info(
+            host=settings.redis_host,
+            port=settings.redis_port,
+            db=settings.redis_db_checkpoints,
+        )
         
         # Create graph with config and checkpointer
         self.graph = create_aml_copilot_graph(

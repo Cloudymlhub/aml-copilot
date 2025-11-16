@@ -9,6 +9,7 @@ readme = "README.md"
 requires-python = "^3.11"
 dependencies = [
     "langgraph (>=1.0.3,<2.0.0)",
+    "langgraph-checkpoint-redis (>=2.0.0,<3.0.0)",
     "langchain (>=1.0.7,<2.0.0)",
     "langchain-openai (>=1.0.3,<2.0.0)",
     "streamlit (>=1.51.0,<2.0.0)",
