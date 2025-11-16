@@ -1,0 +1,27 @@
+[project]
+name = "aml-copilot"
+version = "0.1.0"
+description = "AML Compliance Copilot with Multi-Agent System"
+authors = [
+    {name = "AML Team"}
+]
+readme = "README.md"
+requires-python = "^3.11"
+dependencies = [
+    "langgraph (>=1.0.3,<2.0.0)",
+    "langchain (>=1.0.7,<2.0.0)",
+    "langchain-openai (>=1.0.3,<2.0.0)",
+    "streamlit (>=1.51.0,<2.0.0)",
+    "psycopg2-binary (>=2.9.11,<3.0.0)",
+    "redis (>=7.0.1,<8.0.0)",
+    "python-dotenv (>=1.2.1,<2.0.0)",
+    "pydantic (>=2.12.4,<3.0.0)",
+    "pydantic-settings (>=2.12.0,<3.0.0)",
+    "alembic (>=1.13.0,<2.0.0)",
+    "faker (>=20.0.0,<21.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

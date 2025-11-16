@@ -1,0 +1,204 @@
+{
+  "version": "1.0",
+  "description": "Feature catalog for AML compliance data schema",
+  "tables": {
+    "customers": {
+      "description": "Customer/account holder information",
+      "columns": {
+        "customer_id": {
+          "type": "integer",
+          "description": "Unique customer identifier",
+          "aliases": ["account holder", "client", "user id"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Customer full name",
+          "aliases": ["customer name", "account holder name", "client name"]
+        },
+        "date_of_birth": {
+          "type": "date",
+          "description": "Customer date of birth",
+          "aliases": ["dob", "birth date"]
+        },
+        "country": {
+          "type": "string",
+          "description": "Country of residence",
+          "aliases": ["residence country", "nationality"]
+        },
+        "risk_score": {
+          "type": "float",
+          "description": "Customer risk score (0-100)",
+          "aliases": ["risk level", "customer risk"]
+        },
+        "account_opened_date": {
+          "type": "date",
+          "description": "Date when account was opened",
+          "aliases": ["account creation date", "registration date"]
+        },
+        "kyc_status": {
+          "type": "string",
+          "description": "KYC verification status (verified, pending, rejected)",
+          "aliases": ["verification status", "kyc level"]
+        }
+      }
+    },
+    "transactions": {
+      "description": "Financial transaction records",
+      "columns": {
+        "transaction_id": {
+          "type": "integer",
+          "description": "Unique transaction identifier",
+          "aliases": ["txn id", "transaction number"]
+        },
+        "customer_id": {
+          "type": "integer",
+          "description": "Customer who initiated the transaction",
+          "aliases": ["sender", "originator"]
+        },
+        "amount": {
+          "type": "decimal",
+          "description": "Transaction amount in USD",
+          "aliases": ["transaction amount", "value", "sum"]
+        },
+        "currency": {
+          "type": "string",
+          "description": "Transaction currency code (ISO 4217)",
+          "aliases": ["currency code"]
+        },
+        "transaction_date": {
+          "type": "timestamp",
+          "description": "Date and time of transaction",
+          "aliases": ["txn date", "transaction time", "date"]
+        },
+        "transaction_type": {
+          "type": "string",
+          "description": "Type of transaction (deposit, withdrawal, transfer, wire)",
+          "aliases": ["txn type", "transaction category"]
+        },
+        "counterparty": {
+          "type": "string",
+          "description": "Counterparty name or identifier",
+          "aliases": ["recipient", "beneficiary", "sender"]
+        },
+        "counterparty_country": {
+          "type": "string",
+          "description": "Counterparty country",
+          "aliases": ["destination country", "recipient country"]
+        },
+        "channel": {
+          "type": "string",
+          "description": "Transaction channel (online, atm, branch, mobile)",
+          "aliases": ["transaction channel", "method"]
+        }
+      }
+    },
+    "alerts": {
+      "description": "AML alerts and suspicious activity",
+      "columns": {
+        "alert_id": {
+          "type": "integer",
+          "description": "Unique alert identifier",
+          "aliases": ["alert number", "case id"]
+        },
+        "customer_id": {
+          "type": "integer",
+          "description": "Customer associated with alert",
+          "aliases": ["subject"]
+        },
+        "alert_type": {
+          "type": "string",
+          "description": "Type of AML alert (structuring, high_risk_country, unusual_activity)",
+          "aliases": ["alert category", "typology"]
+        },
+        "alert_date": {
+          "type": "timestamp",
+          "description": "Date when alert was generated",
+          "aliases": ["alert timestamp", "creation date"]
+        },
+        "severity": {
+          "type": "string",
+          "description": "Alert severity (low, medium, high, critical)",
+          "aliases": ["priority", "risk level"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Alert status (open, investigating, closed, escalated)",
+          "aliases": ["case status"]
+        },
+        "assigned_to": {
+          "type": "string",
+          "description": "Investigator assigned to the alert",
+          "aliases": ["investigator", "assigned investigator"]
+        },
+        "description": {
+          "type": "text",
+          "description": "Alert description and details",
+          "aliases": ["alert details", "summary"]
+        }
+      }
+    },
+    "reports": {
+      "description": "Compliance reports and SAR filings",
+      "columns": {
+        "report_id": {
+          "type": "integer",
+          "description": "Unique report identifier",
+          "aliases": ["report number"]
+        },
+        "alert_id": {
+          "type": "integer",
+          "description": "Related alert ID",
+          "aliases": ["source alert"]
+        },
+        "report_type": {
+          "type": "string",
+          "description": "Type of report (SAR, STR, internal)",
+          "aliases": ["filing type"]
+        },
+        "created_date": {
+          "type": "timestamp",
+          "description": "Report creation date",
+          "aliases": ["filing date", "report date"]
+        },
+        "created_by": {
+          "type": "string",
+          "description": "User who created the report",
+          "aliases": ["author", "created by investigator"]
+        },
+        "content": {
+          "type": "text",
+          "description": "Report content and narrative",
+          "aliases": ["report text", "narrative"]
+        }
+      }
+    }
+  },
+  "common_queries": [
+    {
+      "natural_language": "Show me all transactions for customer X",
+      "sql_pattern": "SELECT * FROM transactions WHERE customer_id = {customer_id}"
+    },
+    {
+      "natural_language": "What are the high-risk customers?",
+      "sql_pattern": "SELECT * FROM customers WHERE risk_score > 70"
+    },
+    {
+      "natural_language": "Show recent alerts",
+      "sql_pattern": "SELECT * FROM alerts WHERE alert_date > NOW() - INTERVAL '30 days'"
+    },
+    {
+      "natural_language": "Find large transactions above amount X",
+      "sql_pattern": "SELECT * FROM transactions WHERE amount > {amount}"
+    }
+  ],
+  "typologies": [
+    "structuring",
+    "smurfing",
+    "trade_based_money_laundering",
+    "high_risk_country",
+    "unusual_transaction_pattern",
+    "rapid_movement_of_funds",
+    "shell_company",
+    "round_dollar_transactions"
+  ]
+}
