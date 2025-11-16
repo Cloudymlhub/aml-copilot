@@ -7,19 +7,25 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import AMLCopilotState
 from .prompts import COORDINATOR_PROMPT
+from config.agent_config import AgentConfig
 
 
 class CoordinatorAgent:
     """Coordinator agent that routes queries to specialized agents."""
 
-    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0):
+    def __init__(self, config: AgentConfig):
         """Initialize coordinator agent.
 
         Args:
-            model_name: OpenAI model to use
-            temperature: Temperature for generation
+            config: Agent configuration with model settings
         """
-        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
+        self.config = config
+        self.llm = ChatOpenAI(
+            model=config.model_name,
+            temperature=config.temperature,
+            max_retries=config.max_retries,
+            timeout=config.timeout,
+        )
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Route the query to appropriate agent.
@@ -78,11 +84,14 @@ class CoordinatorAgent:
             }
 
 
-def create_coordinator_node():
+def create_coordinator_node(config: AgentConfig):
     """Create coordinator node for LangGraph.
 
+    Args:
+        config: Agent configuration
+    
     Returns:
         Coordinator agent callable
     """
-    agent = CoordinatorAgent()
+    agent = CoordinatorAgent(config)
     return agent

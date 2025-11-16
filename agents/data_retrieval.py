@@ -5,13 +5,19 @@ from langchain.tools import BaseTool
 
 from tools import get_all_tools
 from .state import AMLCopilotState, DataRetrievalResult
+from config.agent_config import AgentConfig
 
 
 class DataRetrievalAgent:
     """Data retrieval agent that executes queries using available tools."""
 
-    def __init__(self):
-        """Initialize data retrieval agent."""
+    def __init__(self, config: AgentConfig):
+        """Initialize data retrieval agent.
+        
+        Args:
+            config: Agent configuration (currently unused, reserved for future LLM-based retrieval)
+        """
+        self.config = config
         # Load all tools
         self.tools = get_all_tools()
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -128,11 +134,14 @@ class DataRetrievalAgent:
         }
 
 
-def create_data_retrieval_node():
+def create_data_retrieval_node(config: AgentConfig):
     """Create data retrieval node for LangGraph.
 
+    Args:
+        config: Agent configuration
+    
     Returns:
         Data retrieval agent callable
     """
-    agent = DataRetrievalAgent()
+    agent = DataRetrievalAgent(config)
     return agent

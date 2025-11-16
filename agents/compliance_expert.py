@@ -7,19 +7,25 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import AMLCopilotState, ComplianceAnalysis
 from .prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
+from config.agent_config import AgentConfig
 
 
 class ComplianceExpertAgent:
     """Compliance expert agent that interprets data and provides AML guidance."""
 
-    def __init__(self, model_name: str = "gpt-4o", temperature: float = 0.3):
+    def __init__(self, config: AgentConfig):
         """Initialize compliance expert agent.
 
         Args:
-            model_name: OpenAI model to use (use more capable model for expertise)
-            temperature: Temperature for generation
+            config: Agent configuration with model settings
         """
-        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
+        self.config = config
+        self.llm = ChatOpenAI(
+            model=config.model_name,
+            temperature=config.temperature,
+            max_retries=config.max_retries,
+            timeout=config.timeout,
+        )
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Provide compliance expertise and analysis.
@@ -106,11 +112,14 @@ class ComplianceExpertAgent:
         }
 
 
-def create_compliance_expert_node():
+def create_compliance_expert_node(config: AgentConfig):
     """Create compliance expert node for LangGraph.
 
+    Args:
+        config: Agent configuration
+    
     Returns:
         Compliance expert agent callable
     """
-    agent = ComplianceExpertAgent()
+    agent = ComplianceExpertAgent(config)
     return agent

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from agents import AMLCopilot
+from config.settings import settings
 from db.manager import db_manager
 from db.services.cache_service import cache_service
 from .models import (
@@ -32,7 +33,16 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting AML Copilot API...")
     try:
-        copilot = AMLCopilot()
+        # Get agent configurations from settings
+        agents_config = settings.get_agents_config()
+        logger.info(f"✓ Agent configurations loaded:")
+        logger.info(f"  - Coordinator: {agents_config.coordinator.model_name}")
+        logger.info(f"  - Intent Mapper: {agents_config.intent_mapper.model_name}")
+        logger.info(f"  - Data Retrieval: {agents_config.data_retrieval.model_name}")
+        logger.info(f"  - Compliance Expert: {agents_config.compliance_expert.model_name}")
+        
+        # Initialize AML Copilot with configs
+        copilot = AMLCopilot(agents_config=agents_config)
         logger.info("✓ AML Copilot agent initialized")
     except Exception as e:
         logger.error(f"✗ Failed to initialize agent: {e}")

@@ -8,19 +8,25 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import AMLCopilotState, IntentMapping
 from .prompts import INTENT_MAPPER_PROMPT
+from config.agent_config import AgentConfig
 
 
 class IntentMappingAgent:
     """Intent mapping agent that converts natural language to structured queries."""
 
-    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0):
+    def __init__(self, config: AgentConfig):
         """Initialize intent mapping agent.
 
         Args:
-            model_name: OpenAI model to use
-            temperature: Temperature for generation
+            config: Agent configuration with model settings
         """
-        self.llm = ChatOpenAI(model=model_name, temperature=temperature)
+        self.config = config
+        self.llm = ChatOpenAI(
+            model=config.model_name,
+            temperature=config.temperature,
+            max_retries=config.max_retries,
+            timeout=config.timeout,
+        )
 
     def _extract_cif(self, query: str) -> Optional[str]:
         """Extract CIF number from query using regex.
@@ -128,11 +134,14 @@ class IntentMappingAgent:
             }
 
 
-def create_intent_mapper_node():
+def create_intent_mapper_node(config: AgentConfig):
     """Create intent mapper node for LangGraph.
 
+    Args:
+        config: Agent configuration
+    
     Returns:
         Intent mapper agent callable
     """
-    agent = IntentMappingAgent()
+    agent = IntentMappingAgent(config)
     return agent

@@ -1,7 +1,7 @@
 """LangGraph workflow for AML Copilot multi-agent system."""
 
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from langgraph.graph import StateGraph, END
 
 from .state import AMLCopilotState
@@ -9,6 +9,7 @@ from .coordinator import create_coordinator_node
 from .intent_mapper import create_intent_mapper_node
 from .data_retrieval import create_data_retrieval_node
 from .compliance_expert import create_compliance_expert_node
+from config.agent_config import AgentsConfig
 
 
 def route_after_coordinator(state: AMLCopilotState) -> str:
@@ -59,8 +60,12 @@ def route_after_compliance_expert(state: AMLCopilotState) -> str:
     return END
 
 
-def create_aml_copilot_graph() -> StateGraph:
+def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     """Create the AML Copilot multi-agent graph.
+
+    Args:
+        agents_config: Configuration for all agents
+        checkpointer: Optional checkpointer for state persistence
 
     Graph flow:
         START
@@ -71,16 +76,16 @@ def create_aml_copilot_graph() -> StateGraph:
         └─→ compliance_expert → END
 
     Returns:
-        Compiled LangGraph StateGraph
+        Compiled LangGraph CompiledStateGraph
     """
     # Create state graph
     workflow = StateGraph(AMLCopilotState)
 
-    # Add nodes
-    workflow.add_node("coordinator", create_coordinator_node())
-    workflow.add_node("intent_mapper", create_intent_mapper_node())
-    workflow.add_node("data_retrieval", create_data_retrieval_node())
-    workflow.add_node("compliance_expert", create_compliance_expert_node())
+    # Add nodes with configs
+    workflow.add_node("coordinator", create_coordinator_node(agents_config.coordinator))
+    workflow.add_node("intent_mapper", create_intent_mapper_node(agents_config.intent_mapper))
+    workflow.add_node("data_retrieval", create_data_retrieval_node(agents_config.data_retrieval))
+    workflow.add_node("compliance_expert", create_compliance_expert_node(agents_config.compliance_expert))
 
     # Set entry point
     workflow.set_entry_point("coordinator")
@@ -118,27 +123,69 @@ def create_aml_copilot_graph() -> StateGraph:
         }
     )
 
-    # Compile graph
-    return workflow.compile()
+    # Compile graph with optional checkpointer
+    return workflow.compile(checkpointer=checkpointer)
 
 
 class AMLCopilot:
     """AML Copilot multi-agent system."""
 
-    def __init__(self):
-        """Initialize AML Copilot."""
-        self.graph = create_aml_copilot_graph()
+    def __init__(self, agents_config: AgentsConfig):
+        """Initialize AML Copilot with agent configurations.
+        
+        Args:
+            agents_config: Configuration for all agents
+        """
+        from config.settings import settings
+        
+        # Store config
+        self.config = agents_config
+        
+        # Create RedisSaver checkpointer for chat continuity
+        try:
+            from langgraph.checkpoint.redis import RedisSaver
+            
+            self.checkpointer = RedisSaver.from_conn_info(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                db=settings.redis_db_checkpoints,
+            )
+        except ImportError:
+            # RedisSaver not installed yet - will be added in Phase 5.1
+            print("Warning: langgraph-checkpoint-redis not installed. Running without checkpointing.")
+            self.checkpointer = None
+        
+        # Create graph with config and checkpointer
+        self.graph = create_aml_copilot_graph(
+            agents_config=agents_config,
+            checkpointer=self.checkpointer
+        )
 
-    def query(self, user_query: str, session_id: str = None) -> Dict[str, Any]:
+    def query(
+        self, 
+        user_query: str, 
+        context: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         """Process a user query through the multi-agent system.
 
         Args:
             user_query: User's natural language query
-            session_id: Optional session ID for tracking
+            context: Optional context (cif_no, alert_id, etc.) - will be required in Phase 2
+            session_id: Session ID for conversation tracking
+            user_id: User ID for conversation tracking
 
         Returns:
             Final response with analysis
         """
+        # Create thread_id for Redis checkpointer
+        if self.checkpointer and user_id and session_id:
+            thread_id = f"{user_id}_{session_id}"
+            config = {"configurable": {"thread_id": thread_id}}
+        else:
+            config = None
+        
         # Initialize state
         initial_state: AMLCopilotState = {
             "messages": [
@@ -160,8 +207,11 @@ class AMLCopilot:
             "completed": False
         }
 
-        # Run the graph
-        final_state = self.graph.invoke(initial_state)
+        # Run the graph with checkpointing (if available)
+        if config:
+            final_state = self.graph.invoke(initial_state, config=config)
+        else:
+            final_state = self.graph.invoke(initial_state)
 
         return {
             "response": final_state.get("final_response", "Unable to process query"),
