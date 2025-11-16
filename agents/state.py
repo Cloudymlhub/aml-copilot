@@ -45,6 +45,9 @@ class AMLCopilotState(TypedDict):
     # Conversation
     messages: List[Message]
     user_query: str
+    
+    # Context (NEW in Phase 2)
+    context: Dict[str, Any]  # Contains cif_no, alert_id, investigation_id
 
     # Routing
     next_agent: str  # Which agent to route to next

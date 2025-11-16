@@ -4,17 +4,55 @@ from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class QueryContext(BaseModel):
+    """Context for a query - provides known information about the investigation.
+    
+    This replaces fragile entity extraction from user queries. The UI/frontend
+    should always provide the customer being investigated.
+    """
+    
+    cif_no: str = Field(
+        ..., 
+        description="Customer ID (CIF number) - always required",
+        min_length=1
+    )
+    alert_id: Optional[str] = Field(
+        None, 
+        description="Alert ID if query is in context of reviewing an alert"
+    )
+    investigation_id: Optional[str] = Field(
+        None,
+        description="Investigation ID for tracking multi-session investigations"
+    )
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "cif_no": "C000001",
+                "alert_id": "ALT12345",
+                "investigation_id": "INV789"
+            }
+        }
+
+
 class QueryRequest(BaseModel):
     """Request model for querying the AML Copilot."""
 
     query: str = Field(..., description="Natural language query", min_length=1)
-    session_id: Optional[str] = Field(None, description="Optional session ID for conversation tracking")
+    context: QueryContext = Field(..., description="Query context (customer, alert, etc.)")
+    user_id: str = Field(..., description="User ID")  # TODO: Extract from JWT in Phase 6
+    session_id: str = Field(..., description="Session ID for conversation tracking")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "query": "What is the risk score for customer C000001?",
-                "session_id": "session_123"
+                "query": "What is the customer's risk score?",
+                "context": {
+                    "cif_no": "C000001",
+                    "alert_id": "ALT12345"
+                },
+                "user_id": "jane_doe",
+                "session_id": "investigation_abc123"
             }
         }
 

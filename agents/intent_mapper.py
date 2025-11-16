@@ -1,7 +1,6 @@
 """Intent Mapping Agent - Maps natural language to data queries."""
 
 import json
-import re
 from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -28,33 +27,6 @@ class IntentMappingAgent:
             timeout=config.timeout,
         )
 
-    def _extract_cif(self, query: str) -> Optional[str]:
-        """Extract CIF number from query using regex.
-
-        Args:
-            query: User query
-
-        Returns:
-            CIF number if found
-        """
-        # Look for patterns like C000001, CIF000001, etc.
-        patterns = [
-            r'\b(C\d{6})\b',
-            r'\b(CIF\d{6})\b',
-            r'CIF\s*#?\s*(\d{6})',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, query, re.IGNORECASE)
-            if match:
-                # Normalize to C000001 format
-                cif = match.group(1)
-                if not cif.startswith('C'):
-                    cif = 'C' + cif
-                return cif.upper()
-
-        return None
-
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Map user query to structured intent.
 
@@ -65,9 +37,24 @@ class IntentMappingAgent:
             Updated state with intent mapping
         """
         user_query = state["user_query"]
-
-        # Quick CIF extraction
-        cif_no = self._extract_cif(user_query)
+        
+        # Get CIF from context (no longer extracted from query!)
+        context = state.get("context", {})
+        cif_no = context.get("cif_no")
+        
+        if not cif_no:
+            return {
+                "intent": None,
+                "next_agent": "end",
+                "error": "Missing cif_no in context",
+                "messages": state["messages"] + [
+                    {
+                        "role": "assistant",
+                        "content": "[Intent Mapper] Error: No customer ID provided in context",
+                        "timestamp": str(state.get("started_at", ""))
+                    }
+                ]
+            }
 
         # Create prompt
         prompt = INTENT_MAPPER_PROMPT.format(user_query=user_query)
@@ -84,9 +71,10 @@ class IntentMappingAgent:
             # Parse JSON response
             result = json.loads(response.content)
 
-            # Override CIF if we found it with regex
-            if cif_no and "entities" in result:
-                result["entities"]["cif_no"] = cif_no
+            # Add CIF from context to entities
+            if "entities" not in result:
+                result["entities"] = {}
+            result["entities"]["cif_no"] = cif_no
 
             # Create intent mapping
             intent: IntentMapping = {

@@ -160,18 +160,20 @@ async def query_copilot(request: QueryRequest):
         )
 
     try:
-        logger.info(f"Processing query: {request.query[:100]}...")
+        logger.info(f"Processing query for customer {request.context.cif_no}: {request.query[:100]}...")
 
-        # Query the agent
+        # Query the agent with context
         result = copilot.query(
             user_query=request.query,
-            session_id=request.session_id
+            context=request.context.dict(),
+            session_id=request.session_id,
+            user_id=request.user_id
         )
 
         # Build response
         response = QueryResponse(
             response=result.get("response", "Unable to process query"),
-            session_id=result.get("session_id", ""),
+            session_id=request.session_id,  # Use request session_id
             compliance_analysis=None,
             retrieved_data=None
         )

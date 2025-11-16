@@ -196,6 +196,7 @@ class AMLCopilot:
                 }
             ],
             "user_query": user_query,
+            "context": context or {},  # NEW: Include context in state
             "next_agent": "coordinator",
             "current_step": "initialized",
             "intent": None,
