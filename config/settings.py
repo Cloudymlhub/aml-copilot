@@ -38,16 +38,15 @@ class Settings(BaseSettings):
     intent_mapper_max_retries: int = 3
     intent_mapper_timeout: int = 60
     
-    data_retrieval_model: str = "gpt-4o-mini"
-    data_retrieval_temperature: float = 0.0
-    data_retrieval_max_retries: int = 3
-    data_retrieval_timeout: int = 60
-    
     compliance_expert_model: str = "gpt-4o"  # More powerful for compliance analysis
     compliance_expert_temperature: float = 0.1
     compliance_expert_max_retries: int = 3
     compliance_expert_timeout: int = 120  # More time for complex analysis
-
+    
+    review_expert_model: str = "gpt-4o"  # More powerful for compliance analysis
+    review_expert_temperature: float = 0.1
+    review_expert_max_retries: int = 3
+    review_expert_timeout: int = 120  # More time for complex analysis
     # Review system settings
     max_review_attempts: int = 3  # Maximum number of review cycles before forcing completion
 
@@ -85,12 +84,12 @@ class Settings(BaseSettings):
     
     def get_agents_config(self):
         """Build agents configuration from settings.
-        
+
         Returns:
             AgentsConfig: Configuration for all agents
         """
-        from config.agent_config import AgentsConfig, AgentConfig
-        
+        from config.agent_config import AgentsConfig, AgentConfig, ReviewAgentConfig
+
         return AgentsConfig(
             coordinator=AgentConfig(
                 model_name=self.coordinator_model,
@@ -104,17 +103,18 @@ class Settings(BaseSettings):
                 max_retries=self.intent_mapper_max_retries,
                 timeout=self.intent_mapper_timeout,
             ),
-            data_retrieval=AgentConfig(
-                model_name=self.data_retrieval_model,
-                temperature=self.data_retrieval_temperature,
-                max_retries=self.data_retrieval_max_retries,
-                timeout=self.data_retrieval_timeout,
-            ),
             compliance_expert=AgentConfig(
                 model_name=self.compliance_expert_model,
                 temperature=self.compliance_expert_temperature,
                 max_retries=self.compliance_expert_max_retries,
                 timeout=self.compliance_expert_timeout,
+            ),
+            review_expert=ReviewAgentConfig(
+                model_name=self.review_expert_model,  # Uses same model as review Expert
+                temperature=self.review_expert_temperature,
+                max_retries=self.review_expert_max_retries,
+                timeout=self.review_expert_timeout,
+                max_review_attempts=self.max_review_attempts,
             ),
         )
 

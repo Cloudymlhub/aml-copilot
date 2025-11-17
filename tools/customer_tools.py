@@ -29,7 +29,7 @@ class GetCustomerBasicInfo(BaseTool):
         if not customer:
             return {"error": f"Customer {cif_no} not found"}
 
-        return customer.model_dump()
+        return customer.model_dump(mode='json')
 
 
 class GetCustomerTransactionFeatures(BaseTool):
@@ -56,7 +56,7 @@ class GetCustomerTransactionFeatures(BaseTool):
         if not features:
             return {"error": f"Transaction features not found for customer {cif_no}"}
 
-        return features.model_dump()
+        return features.model_dump(mode='json')
 
 
 class GetCustomerRiskFeatures(BaseTool):
@@ -80,7 +80,7 @@ class GetCustomerRiskFeatures(BaseTool):
         if not features:
             return {"error": f"Risk features not found for customer {cif_no}"}
 
-        return features.model_dump()
+        return features.model_dump(mode='json')
 
 
 class GetCustomerBehavioralFeatures(BaseTool):
@@ -103,7 +103,7 @@ class GetCustomerBehavioralFeatures(BaseTool):
         if not features:
             return {"error": f"Behavioral features not found for customer {cif_no}"}
 
-        return features.model_dump()
+        return features.model_dump(mode='json')
 
 
 class GetCustomerNetworkFeatures(BaseTool):
@@ -127,7 +127,7 @@ class GetCustomerNetworkFeatures(BaseTool):
         if not features:
             return {"error": f"Network features not found for customer {cif_no}"}
 
-        return features.model_dump()
+        return features.model_dump(mode='json')
 
 
 class GetCustomerKnowledgeGraphFeatures(BaseTool):
@@ -150,7 +150,7 @@ class GetCustomerKnowledgeGraphFeatures(BaseTool):
         if not features:
             return {"error": f"Knowledge graph features not found for customer {cif_no}"}
 
-        return features.model_dump()
+        return features.model_dump(mode='json')
 
 
 class GetCustomerFullProfile(BaseTool):
@@ -185,11 +185,11 @@ class GetCustomerFullProfile(BaseTool):
         if not profile or not profile.get("basic"):
             return {"error": f"Customer {cif_no} not found"}
 
-        # Serialize all groups using model_dump
+        # Serialize all groups using model_dump with JSON mode
         result = {"cif_no": cif_no}
         for group_name, group_data in profile.items():
             if group_data:
-                result[group_name] = group_data.model_dump()
+                result[group_name] = group_data.model_dump(mode='json')
 
         return result
 
@@ -212,7 +212,7 @@ class SearchCustomersByName(BaseTool):
             return {"results": [], "count": 0}
 
         return {
-            "results": [c.model_dump() for c in customers],
+            "results": [c.model_dump(mode='json') for c in customers],
             "count": len(customers),
         }
 

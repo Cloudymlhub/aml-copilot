@@ -10,19 +10,28 @@ This project implements Phase 2 of the Agentic Compliance Architecture - an inte
 
 ### Multi-Agent System
 
-The system consists of four specialized agents orchestrated via LangGraph:
+The system consists of five specialized agents orchestrated via LangGraph:
 
-1. **Coordinator Agent** - Central orchestrator that manages workflow between specialized agents
-2. **Intent Mapping Agent** - Translates natural language queries into structured data requests and maps to database columns
+1. **Coordinator Agent** - Entry point with scope validation (true/partial/false) and LLM-generated guidance
+2. **Intent Mapping Agent** - Translates natural language queries into structured data requests with clarification support
 3. **Data Retrieval Agent** - Executes queries against PostgreSQL database with Redis caching
-4. **Compliance Expert Agent** - Provides procedural guidance, compliance checks, and report generation
+4. **Compliance Expert Agent** - Provides procedural guidance, compliance analysis, and report generation
+5. **Review Agent** - Dedicated QA agent with 5-way routing (passed/needs_data/needs_refinement/needs_clarification/human_review)
+
+For detailed workflow, routing logic, and review loops, see [AGENT_FLOW.md](AGENT_FLOW.md).
 
 ### Data Flow
 
 ```
-User Query → Coordinator → Intent Mapper → Data Retrieval → Compliance Expert → Response
-                    ↓                              ↓
-                Redis Cache                  PostgreSQL
+User Query → Coordinator (scope check) → Intent Mapper (with clarification) → 
+Data Retrieval → Compliance Expert → Review Agent
+                    ↓                         ↓
+                Redis Cache          5-way routing:
+                PostgreSQL           - passed → user
+                                     - needs_data → intent_mapper
+                                     - needs_refinement → compliance_expert
+                                     - needs_clarification → user
+                                     - human_review → flag
 ```
 
 ## Project Structure
@@ -30,13 +39,19 @@ User Query → Coordinator → Intent Mapper → Data Retrieval → Compliance E
 ```
 aml_copilot/
 ├── agents/              # LangGraph agent implementations
-│   ├── coordinator.py
-│   ├── intent_mapper.py
+│   ├── coordinator.py   # Entry point with 3-state scope validation
+│   ├── intent_mapper.py # Query mapping with clarification support
 │   ├── data_retrieval.py
-│   └── compliance_expert.py
+│   ├── compliance_expert.py
+│   ├── review_agent.py  # QA agent with 5-way routing
+│   ├── graph.py         # LangGraph orchestration with review loops
+│   ├── state.py         # Shared state schema
+│   └── prompts.py       # Agent prompts
 ├── tools/               # LangChain tools (expose functions to agents)
-│   ├── db_tools.py
-│   └── cache_tools.py
+│   ├── customer_tools.py
+│   ├── transaction_tools.py
+│   ├── alert_tools.py
+│   └── registry.py
 ├── db/                  # Database layer
 │   ├── manager.py       # DB connection manager with DI pattern (raw SQL)
 │   ├── models/          # Pydantic models (not ORM)
@@ -61,7 +76,7 @@ aml_copilot/
 │   ├── mock_data.py
 │   └── feature_catalog.json
 ├── config/              # Configuration
-│   └── settings.py
+│   └── settings.py      # Includes max_review_attempts
 ├── ui/                  # Streamlit interface
 │   └── streamlit_app.py
 └── tests/               # Test suite
@@ -173,9 +188,19 @@ poetry run streamlit run ui/streamlit_app.py
 Edit `config/settings.py` or use environment variables:
 
 - `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string
+- `REDIS_URL` - Redis connection string (or separate `REDIS_CACHE_URL` and `REDIS_CHECKPOINT_URL`)
 - `OPENAI_API_KEY` - OpenAI API key
 - `LLM_MODEL` - Model to use (default: gpt-4)
+- `MAX_REVIEW_ATTEMPTS` - Maximum review cycles before flagging for human review (default: 3)
+
+### Agent-Specific Configuration
+
+Each agent can have custom LLM settings via `AgentConfig`:
+- `model` - Override default LLM model per agent
+- `temperature` - Control randomness (0.0-1.0)
+- `max_tokens` - Response length limit
+
+See [AGENT_FLOW.md](AGENT_FLOW.md) for architecture details.
 
 ## Development
 
@@ -186,16 +211,22 @@ poetry run pytest
 
 ## Features
 
-- Natural language query interface
-- Intelligent intent mapping to database schema
-- Fast data retrieval with Redis caching
-- Context-aware compliance guidance
+- Natural language query interface with clarification support
+- Intelligent 3-state scope validation (true/partial/false)
+- Intent mapping to database schema with context awareness
+- Fast data retrieval with Redis caching (separate cache and checkpoint stores)
+- Context-aware compliance guidance and analysis
 - Automated report generation
+- Adaptive review system with 5-way routing
+- Configurable review loops to ensure output quality
+- LLM-generated guidance messages for query refinement
 - Audit trail logging
 
-## Roadmap
+## Architecture Documentation
 
-See [objective.md](objective.md) for the full vision including Phase 1 (Investigator Support) and Phase 3 (Progressive Automation).
+- **[AGENT_FLOW.md](AGENT_FLOW.md)** - Comprehensive agent workflow, routing logic, and review system
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design patterns
+- **[objective.md](objective.md)** - Project vision and roadmap
 
 ## License
 

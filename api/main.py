@@ -9,6 +9,7 @@ from agents import AMLCopilot
 from config.settings import settings
 from db.manager import db_manager
 from db.services.cache_service import cache_service
+from tools.registry import get_tool_descriptions
 from .models import (
     QueryRequest,
     QueryResponse,
@@ -38,12 +39,14 @@ async def lifespan(app: FastAPI):
         logger.info(f"✓ Agent configurations loaded:")
         logger.info(f"  - Coordinator: {agents_config.coordinator.model_name}")
         logger.info(f"  - Intent Mapper: {agents_config.intent_mapper.model_name}")
-        logger.info(f"  - Data Retrieval: {agents_config.data_retrieval.model_name}")
+        logger.info(f"  - Data Retrieval: No LLM")
         logger.info(f"  - Compliance Expert: {agents_config.compliance_expert.model_name}")
         
         # Initialize AML Copilot with configs
-        copilot = AMLCopilot(agents_config=agents_config)
+        # Note: Checkpointing disabled by default (requires Redis with RedisJSON)
+        copilot = AMLCopilot(agents_config=agents_config, enable_checkpointing=False)
         logger.info("✓ AML Copilot agent initialized")
+        logger.info("⚠️  Checkpointing disabled - conversations will not persist")
     except Exception as e:
         logger.error(f"✗ Failed to initialize agent: {e}")
         raise
@@ -211,7 +214,6 @@ async def query_copilot(request: QueryRequest):
 )
 async def list_tools():
     """List all available tools for data retrieval."""
-    from tools import get_tool_descriptions
 
     try:
         return get_tool_descriptions()
@@ -239,6 +241,127 @@ async def clear_cache():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error clearing cache: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/sessions/{user_id}/{session_id}/history",
+    tags=["Sessions"],
+    summary="Get conversation history"
+)
+async def get_conversation_history(user_id: str, session_id: str):
+    """
+    Get the conversation history for a specific session.
+
+    Returns all messages exchanged in the conversation, allowing
+    users to review past interactions.
+    """
+    if not copilot:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AML Copilot agent not initialized"
+        )
+
+    try:
+        history = copilot.get_conversation_history(user_id, session_id)
+
+        if history is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session not found: {user_id}/{session_id}"
+            )
+
+        return {
+            "user_id": user_id,
+            "session_id": session_id,
+            "messages": history,
+            "message_count": len(history)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting conversation history: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting conversation history: {str(e)}"
+        )
+
+
+@app.get(
+    "/api/sessions/{user_id}/{session_id}",
+    tags=["Sessions"],
+    summary="Get session info"
+)
+async def get_session_info(user_id: str, session_id: str):
+    """
+    Get metadata about a session.
+
+    Returns information like when the session started, how many
+    messages have been exchanged, and the current context.
+    """
+    if not copilot:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AML Copilot agent not initialized"
+        )
+
+    try:
+        info = copilot.get_session_info(user_id, session_id)
+
+        if info is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session not found: {user_id}/{session_id}"
+            )
+
+        return info
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session info: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error getting session info: {str(e)}"
+        )
+
+
+@app.delete(
+    "/api/sessions/{user_id}/{session_id}",
+    tags=["Sessions"],
+    summary="Clear/delete a session"
+)
+async def clear_session(user_id: str, session_id: str):
+    """
+    Clear/delete a session and all its conversation history.
+
+    This is useful for:
+    - Starting a fresh investigation
+    - Cleaning up test sessions
+    - Privacy/GDPR compliance
+    """
+    if not copilot:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AML Copilot agent not initialized"
+        )
+
+    try:
+        cleared = copilot.clear_session(user_id, session_id)
+
+        if not cleared:
+            logger.warning(f"Session not found or could not be cleared: {user_id}/{session_id}")
+
+        return {
+            "status": "success" if cleared else "not_found",
+            "message": f"Session cleared: {user_id}/{session_id}" if cleared else "Session not found",
+            "user_id": user_id,
+            "session_id": session_id
+        }
+    except Exception as e:
+        logger.error(f"Error clearing session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error clearing session: {str(e)}"
         )
 
 

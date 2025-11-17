@@ -64,7 +64,7 @@ class DataService:
         if customer:
             # Cache for future requests
             self.cache.set_customer_feature_group(
-                cif_no, "basic", customer.model_dump()
+                cif_no, "basic", customer.model_dump(mode='json')
             )
 
         return customer
@@ -86,7 +86,7 @@ class DataService:
 
         if features:
             self.cache.set_customer_feature_group(
-                cif_no, "transaction_features", features.model_dump()
+                cif_no, "transaction_features", features.model_dump(mode='json')
             )
 
         return features
@@ -108,7 +108,7 @@ class DataService:
 
         if features:
             self.cache.set_customer_feature_group(
-                cif_no, "risk_features", features.model_dump()
+                cif_no, "risk_features", features.model_dump(mode='json')
             )
 
         return features
@@ -130,7 +130,7 @@ class DataService:
 
         if features:
             self.cache.set_customer_feature_group(
-                cif_no, "behavioral_features", features.model_dump()
+                cif_no, "behavioral_features", features.model_dump(mode='json')
             )
 
         return features
@@ -152,7 +152,7 @@ class DataService:
 
         if features:
             self.cache.set_customer_feature_group(
-                cif_no, "network_features", features.model_dump()
+                cif_no, "network_features", features.model_dump(mode='json')
             )
 
         return features
@@ -174,7 +174,7 @@ class DataService:
 
         if features:
             self.cache.set_customer_feature_group(
-                cif_no, "knowledge_graph", features.model_dump()
+                cif_no, "knowledge_graph", features.model_dump(mode='json')
             )
 
         return features
@@ -257,7 +257,7 @@ class DataService:
             transactions = self.transaction_repo.get_by_customer(conn, customer.id, limit)
 
         if transactions:
-            serialized = [t.model_dump() for t in transactions]
+            serialized = [t.model_dump(mode='json') for t in transactions]
             self.cache.set_transaction_list(cache_key, serialized, ttl=300)
 
         return transactions
@@ -314,7 +314,7 @@ class DataService:
             alerts = self.alert_repo.get_by_customer(conn, customer.id, limit)
 
         if alerts:
-            serialized = [a.model_dump() for a in alerts]
+            serialized = [a.model_dump(mode='json') for a in alerts]
             self.cache.set_alert_list(cache_key, serialized, ttl=300)
 
         return alerts

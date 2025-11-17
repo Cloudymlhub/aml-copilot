@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .state import AMLCopilotState, ComplianceAnalysis
 from .prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
 from config.agent_config import AgentConfig
+from config.settings import settings
 
 
 class ComplianceExpertAgent:
@@ -25,6 +26,7 @@ class ComplianceExpertAgent:
             temperature=config.temperature,
             max_retries=config.max_retries,
             timeout=config.timeout,
+            api_key=settings.openai_api_key,
         )
 
 

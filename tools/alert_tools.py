@@ -31,7 +31,7 @@ class GetOpenAlerts(BaseTool):
             return {"alerts": [], "count": 0}
 
         return {
-            "alerts": [a.model_dump() for a in alerts],
+            "alerts": [a.model_dump(mode='json') for a in alerts],
             "count": len(alerts),
         }
 
@@ -57,7 +57,7 @@ class GetAlertsBySeverity(BaseTool):
 
         return {
             "severity": severity,
-            "alerts": [a.model_dump() for a in alerts],
+            "alerts": [a.model_dump(mode='json') for a in alerts],
             "count": len(alerts),
         }
 
@@ -84,7 +84,7 @@ class GetAlertsByType(BaseTool):
 
         return {
             "alert_type": alert_type,
-            "alerts": [a.model_dump() for a in alerts],
+            "alerts": [a.model_dump(mode='json') for a in alerts],
             "count": len(alerts),
         }
 
@@ -111,7 +111,7 @@ class GetCustomerAlerts(BaseTool):
 
         return {
             "cif_no": cif_no,
-            "alerts": [a.model_dump() for a in alerts],
+            "alerts": [a.model_dump(mode='json') for a in alerts],
             "count": len(alerts),
         }
 
@@ -133,7 +133,7 @@ class GetAlertDetails(BaseTool):
         if not alert:
             return {"error": f"Alert {alert_id} not found"}
 
-        return alert.model_dump()
+        return alert.model_dump(mode='json')
 
 
 class AlertDataTools:

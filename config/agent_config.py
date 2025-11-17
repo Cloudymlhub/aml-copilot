@@ -42,14 +42,20 @@ class AgentConfig(BaseModel):
             }
         }
 
+class ReviewAgentConfig(AgentConfig):
+    max_review_attempts: int = Field(
+        3,
+        ge=1,
+        description="Maximum number of review cycles before forcing completion"
+    )
 
 class AgentsConfig(BaseModel):
     """Configuration for all agents in the AML Copilot system.
-    
+
     This model aggregates the configurations for each specialized agent,
     allowing different models and parameters per agent role.
     """
-    
+
     coordinator: AgentConfig = Field(
         ...,
         description="Configuration for the Coordinator agent"
@@ -58,42 +64,12 @@ class AgentsConfig(BaseModel):
         ...,
         description="Configuration for the Intent Mapper agent"
     )
-    data_retrieval: AgentConfig = Field(
-        ...,
-        description="Configuration for the Data Retrieval agent"
-    )
     compliance_expert: AgentConfig = Field(
         ...,
         description="Configuration for the Compliance Expert agent"
     )
+    review_expert: ReviewAgentConfig = Field(
+        ...,
+        description="Configuration for the Review Expert agent"
+    )
     
-    class Config:
-        """Pydantic configuration."""
-        json_schema_extra = {
-            "example": {
-                "coordinator": {
-                    "model_name": "gpt-4o-mini",
-                    "temperature": 0.0,
-                    "max_retries": 3,
-                    "timeout": 60
-                },
-                "intent_mapper": {
-                    "model_name": "gpt-4o-mini",
-                    "temperature": 0.0,
-                    "max_retries": 3,
-                    "timeout": 60
-                },
-                "data_retrieval": {
-                    "model_name": "gpt-4o-mini",
-                    "temperature": 0.0,
-                    "max_retries": 3,
-                    "timeout": 60
-                },
-                "compliance_expert": {
-                    "model_name": "gpt-4o",
-                    "temperature": 0.1,
-                    "max_retries": 3,
-                    "timeout": 120
-                }
-            }
-        }

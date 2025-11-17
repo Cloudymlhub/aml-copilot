@@ -7,18 +7,19 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .state import AMLCopilotState
 from .prompts import REVIEW_AGENT_PROMPT
-from config.agent_config import AgentConfig
+from config.agent_config import AgentConfig, ReviewAgentConfig
 from config.settings import settings
 
 
 class ReviewAgent:
     """Dedicated QA agent that evaluates compliance expert outputs."""
 
-    def __init__(self, config: AgentConfig):
+    def __init__(self, config: ReviewAgentConfig):
         """Initialize review agent.
 
         Args:
             config: Agent configuration with model settings
+            max_review_attempts: Maximum number of review cycles before forcing completion
         """
         self.config = config
         self.llm = ChatOpenAI(
@@ -26,8 +27,9 @@ class ReviewAgent:
             temperature=config.temperature,
             max_retries=config.max_retries,
             timeout=config.timeout,
+            api_key=settings.openai_api_key,
         )
-        self.max_review_attempts = settings.max_review_attempts
+        self.max_review_attempts = config.max_review_attempts
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Review compliance expert output and determine next steps.
@@ -179,7 +181,7 @@ class ReviewAgent:
             }
 
 
-def create_review_agent_node(config: AgentConfig):
+def create_review_agent_node(config: ReviewAgentConfig):
     """Create review agent node for LangGraph.
 
     Args:

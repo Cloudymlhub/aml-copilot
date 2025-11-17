@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .state import AMLCopilotState
 from .prompts import COORDINATOR_PROMPT
 from config.agent_config import AgentConfig
+from config.settings import settings
 
 
 class CoordinatorAgent:
@@ -25,6 +26,7 @@ class CoordinatorAgent:
             temperature=config.temperature,
             max_retries=config.max_retries,
             timeout=config.timeout,
+            api_key=settings.openai_api_key,
         )
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
@@ -46,7 +48,7 @@ class CoordinatorAgent:
             SystemMessage(content="You are a coordinator agent. Respond ONLY with valid JSON."),
             HumanMessage(content=prompt)
         ]
-
+        
         response = self.llm.invoke(messages)
 
         try:

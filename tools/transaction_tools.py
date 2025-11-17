@@ -36,7 +36,7 @@ class GetCustomerTransactions(BaseTool):
 
         return {
             "cif_no": cif_no,
-            "transactions": [t.model_dump() for t in transactions],
+            "transactions": [t.model_dump(mode='json') for t in transactions],
             "count": len(transactions),
         }
 
@@ -67,7 +67,7 @@ class GetHighRiskTransactions(BaseTool):
 
         return {
             "cif_no": cif_no,
-            "transactions": [t.model_dump() for t in transactions],
+            "transactions": [t.model_dump(mode='json') for t in transactions],
             "count": len(transactions),
         }
 
@@ -133,7 +133,7 @@ class GetTransactionsByDateRange(BaseTool):
             "cif_no": cif_no,
             "start_date": start_date,
             "end_date": end_date,
-            "transactions": [t.model_dump() for t in transactions],
+            "transactions": [t.model_dump(mode='json') for t in transactions],
             "count": len(transactions),
         }
 

@@ -1,0 +1,93 @@
+╔════════════════════════════════════════════════════════════════╗
+║                  AML COPILOT - MAKE CHEATSHEET                 ║
+╚════════════════════════════════════════════════════════════════╝
+
+🚀 QUICK START
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make setup          # First-time setup (install + services + DB)
+  make start          # Start services and API
+  make stop           # Stop everything
+  make status         # Check system status
+  make help           # Show all available commands
+
+📦 API COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make api-run        # Run API (dev mode with auto-reload)
+  make api-dev        # Start services + run API
+  make api-prod       # Run API (production mode)
+
+  → API: http://localhost:8000
+  → Docs: http://localhost:8000/docs
+
+🗄️  DATABASE COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make db-start       # Start PostgreSQL
+  make db-migrate     # Run migrations
+  make db-seed        # Load mock data
+  make db-refresh     # ⚠️  Full refresh (reset + migrate + seed)
+  make db-shell       # Open PostgreSQL shell
+  make db-backup      # Backup database
+  make db-status      # Check DB connection
+
+🔴 REDIS COMMANDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make redis-start    # Start Redis
+  make redis-cli      # Open Redis CLI
+  make redis-flush    # ⚠️  Clear all cache
+  make redis-info     # Show Redis stats
+  make redis-status   # Check Redis connection
+
+🐳 DOCKER SERVICES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make services-start    # Start all services (PostgreSQL + Redis)
+  make services-stop     # Stop all services
+  make services-restart  # Restart services
+  make services-status   # Check service status
+  make services-logs     # View live logs
+  make services-clean    # ⚠️  Remove all volumes (deletes data)
+
+🧪 DEVELOPMENT & TESTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  make notebook       # Start Jupyter notebook
+  make notebook-lab   # Start Jupyter Lab
+  make test           # Run tests
+  make format         # Format code
+  make lint           # Lint code
+  make clean          # Clean cache files
+  make check-env      # Verify configuration
+  make shell          # Python shell with context
+
+⚡ COMMON WORKFLOWS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Start of day:
+    make status && make api-run
+
+  Fresh database:
+    make db-refresh
+
+  Complete reset:
+    make services-clean && make setup
+
+  Debug database:
+    make db-shell
+    # SELECT * FROM customers LIMIT 5;
+
+  Debug cache:
+    make redis-cli
+    # KEYS *
+
+  Test API interactively:
+    Terminal 1: make api-run
+    Terminal 2: make notebook
+    Open: notebooks/api_testing.ipynb
+
+📚 DOCUMENTATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  MAKEFILE_GUIDE.md           # Complete guide
+  ENV_CONFIGURATION_GUIDE.md  # Environment configuration
+  ARCHITECTURE.md             # System architecture
+
+⚠️  Symbols: Commands marked with ⚠️  are DESTRUCTIVE (delete data)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For full list: make help

@@ -1,312 +1,293 @@
 # AML Copilot Agent Flow
 
-## Architecture Overview
+## Overview
+This document describes the multi-agent workflow for the AML Compliance Copilot system, including the dedicated ReviewAgent and clarification mechanisms.
 
-The AML Copilot uses a **LangGraph multi-agent system** with adaptive self-review capabilities. Agents collaborate to interpret queries, retrieve data, and provide compliance expertise with automatic quality assurance.
+## Agents
+
+### 1. Coordinator Agent
+**Role**: Entry point, scope validation, and workflow orchestration
+
+**Responsibilities**:
+- **Scope Validation**: Determines if query is AML-related (in-scope vs out-of-scope)
+- Routes in-scope queries to appropriate agents
+- Rejects out-of-scope queries with helpful messages
+
+**Outputs**:
+- `in_scope`: boolean
+- `out_of_scope_message`: helpful rejection message (if out-of-scope)
+- `next_agent`: "intent_mapper" | "compliance_expert" | "end"
+
+**Routing Logic**:
+- OUT OF SCOPE → `end` (return rejection message)
+- Data query → `intent_mapper`
+- Compliance question (no data needed) → `compliance_expert`
+- Procedural guidance → `compliance_expert`
 
 ---
 
-## Agent Roles
+### 2. Intent Mapper Agent
+**Role**: Natural language to structured query mapping
 
-### 1. **Coordinator Agent**
-- **Purpose**: Entry point and workflow orchestration
-- **Responsibilities**:
-  - Determines if query can be answered immediately
-  - Routes to appropriate agent (intent_mapper or compliance_expert)
-  - Handles simple greetings/help requests directly
+**Responsibilities**:
+- Interprets user queries (or additional_query from ReviewAgent)
+- Extracts entities and maps to tools
+- **Clarification Check**: Identifies ambiguous queries
 
-### 2. **Intent Mapper Agent**
-- **Purpose**: Natural language → structured query translation
-- **Responsibilities**:
-  - Parses user queries (original or additional data requests)
-  - Identifies intent type (data_query, compliance_question, etc.)
-  - Extracts entities and maps to feature groups
-  - Determines which tools to invoke
-  - Returns structured intent mapping
+**Outputs**:
+- `needs_clarification`: boolean
+- `clarification_question`: natural language question (if ambiguous)
+- `intent`: Structured mapping with tools and arguments
+- `tools_to_use`: List of tools to invoke
 
-### 3. **Data Retrieval Agent**
-- **Purpose**: Execute data queries using tools
-- **Responsibilities**:
-  - Executes tools specified by intent mapper
-  - Fetches customer, transaction, alert, and report data
-  - Returns structured data results
-  - Handles tool execution errors
+**Routing Logic**:
+- NEEDS CLARIFICATION → `end` (return clarification question to user)
+- MAPPABLE → `data_retrieval`
 
-### 4. **Compliance Expert Agent**
-- **Purpose**: AML domain expertise and analysis
-- **Responsibilities**:
-  - Interprets retrieved data through compliance lens
-  - Identifies AML typologies and risks
-  - Generates compliance analysis and recommendations
-  - **Performs self-review** for quality assurance
-  - Requests additional data if needed
-  - Synthesizes final user-facing response
+---
+
+### 3. Data Retrieval Agent
+**Role**: Execute data queries using tools
+
+**Responsibilities**:
+- Invokes tools specified by Intent Mapper
+- Retrieves factual data without interpretation
+- Handles errors gracefully
+
+**Outputs**:
+- `retrieved_data`: Success/failure with data
+- `tools_used`: List of executed tools
+
+**Routing Logic**:
+- Always → `compliance_expert`
+
+---
+
+### 4. Compliance Expert Agent
+**Role**: AML domain expertise and analysis
+
+**Responsibilities**:
+- Interprets retrieved data through AML lens
+- Identifies typologies and risk patterns
+- Provides recommendations and regulatory references
+- Incorporates review feedback on retries
+
+**Outputs**:
+- `compliance_analysis`: Structured analysis
+- `final_response`: Natural language response
+
+**Routing Logic**:
+- Always → `review_agent`
+
+---
+
+### 5. Review Agent (NEW)
+**Role**: Quality assurance and adaptive routing
+
+**Responsibilities**:
+- Evaluates compliance expert output objectively
+- Identifies missing data, quality issues, or ambiguities
+- Determines next steps based on review criteria
+
+**Review Criteria**:
+1. **Completeness**: Does it fully answer the query?
+2. **Data Sufficiency**: Is critical data missing?
+3. **Accuracy**: Are insights and typologies correct?
+4. **Clarity**: Is the response understandable?
+5. **Actionability**: Are next steps clear?
+6. **Query Clarity**: Is the original question clear enough?
+
+**Outputs**:
+- `review_status`: "passed" | "needs_data" | "needs_refinement" | "needs_clarification" | "human_review"
+- `review_feedback`: Detailed explanation
+- `additional_query`: Natural language request (for needs_data or needs_clarification)
+- `confidence`: 0.0-1.0
+
+**Routing Logic**:
+- **passed** → `end` (return to user)
+- **needs_data** → `intent_mapper` (fetch more data)
+- **needs_refinement** → `compliance_expert` (redo analysis)
+- **needs_clarification** → `end` (ask user for clarification)
+- **human_review** → `end` (flag for human intervention)
+- **max_attempts (3)** → `end` (force completion)
 
 ---
 
 ## Complete Flow Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      USER SUBMITS QUERY                      │
-│              (with context: cif_no, alert_id, etc.)          │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │   COORDINATOR        │ Entry point
-              │   (Agent 1)          │
-              └──────────┬───────────┘
-                         │
-                         ├─→ Simple query? → Direct response → END
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │   INTENT MAPPER      │ Parse query
-              │   (Agent 2)          │
-              └──────────┬───────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │   DATA RETRIEVAL     │ Fetch data
-              │   (Agent 3)          │
-              └──────────┬───────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │  COMPLIANCE EXPERT   │ Analyze + Review
-              │   (Agent 4)          │
-              │                      │
-              │  1. Generate analysis│
-              │  2. Self-review      │
-              │  3. Set review_status│
-              └──────────┬───────────┘
-                         │
-                         ▼
-           ┌─────────────────────────────┐
-           │   ROUTE AFTER COMPLIANCE    │ Decision point
-           │   (Graph conditional edge)  │
-           └─┬───────────┬───────────┬───┘
-             │           │           │
-    ┌────────┘           │           └────────┐
-    │                    │                    │
-    ▼                    ▼                    ▼
-┌────────┐    ┌──────────────────┐    ┌─────────────┐
-│  END   │    │  INTENT MAPPER   │    │ COMPLIANCE  │
-│(passed)│    │  (needs_data)    │    │   EXPERT    │
-└────────┘    │                  │    │(needs_refine)│
-              │ Re-interpret     │    └──────┬──────┘
-              │ additional_query │           │
-              └────────┬─────────┘           │
-                       │                     │
-                       ▼                     │
-            ┌──────────────────┐            │
-            │  DATA RETRIEVAL  │            │
-            │  (fetch more)    │            │
-            └────────┬─────────┘            │
-                     │                      │
-                     └──────────────────────┘
-                              │
-                              ▼
-                   [Loop back to Compliance Expert]
+START
+  ↓
+┌─────────────┐
+│ Coordinator │ (Scope validation)
+└─────────────┘
+  ↓
+  ├─ OUT OF SCOPE ────────────────────────────────────→ END (rejection message)
+  │
+  ├─ Compliance question (no data) ──→ Compliance Expert
+  │
+  └─ Data query
+       ↓
+  ┌──────────────┐
+  │ Intent Mapper │ (Map query to tools, check clarity)
+  └──────────────┘
+       ↓
+       ├─ NEEDS CLARIFICATION ──────────────────────────→ END (clarification question)
+       │
+       └─ MAPPABLE
+            ↓
+       ┌────────────────┐
+       │ Data Retrieval  │ (Execute tools)
+       └────────────────┘
+            ↓
+       ┌────────────────────┐
+       │ Compliance Expert  │ (Analyze & synthesize)
+       └────────────────────┘
+            ↓
+       ┌──────────────┐
+       │ Review Agent │ (QA evaluation)
+       └──────────────┘
+            ↓
+            ├─ PASSED ──────────────────────────────────→ END (success)
+            │
+            ├─ NEEDS DATA ──────────────────────────────→ Intent Mapper (loop with additional_query)
+            │
+            ├─ NEEDS REFINEMENT ────────────────────────→ Compliance Expert (retry with feedback)
+            │
+            ├─ NEEDS CLARIFICATION ─────────────────────→ END (ask user)
+            │
+            ├─ HUMAN REVIEW ────────────────────────────→ END (flag for human)
+            │
+            └─ MAX ATTEMPTS (3) ────────────────────────→ END (force completion)
 ```
 
 ---
 
-## Detailed Flow Steps
+## Adaptive Loops
 
-### **Initial Pass (First Request)**
-
-1. **User Query** → Coordinator
-   - Input: `user_query`, `context` (cif_no, alert_id, etc.)
-   
-2. **Coordinator** → Intent Mapper
-   - Decision: Is this a simple query? No → route to intent_mapper
-   
-3. **Intent Mapper** → Data Retrieval
-   - Parses `user_query`
-   - Returns: `intent` (tools_to_use, entities, feature_groups)
-   
-4. **Data Retrieval** → Compliance Expert
-   - Executes tools from intent
-   - Returns: `retrieved_data` (customer info, transactions, alerts, etc.)
-   
-5. **Compliance Expert** → Self-Review
-   - Generates compliance analysis
-   - Synthesizes final response
-   - **Performs self-review**:
-     - ✅ Complete? Accurate? Clear? Actionable?
-     - Returns: `review_status` + `review_feedback` + `additional_query` (if needed)
-
-### **Review Decision Point**
-
-The graph routes based on `review_status`:
-
-#### **Option A: Review Passed** ✅
+### Loop 1: Additional Data Loop
 ```
-review_status = "passed"
-→ END
-→ Return final_response to user
+Compliance Expert → Review Agent (needs_data) → Intent Mapper → Data Retrieval → Compliance Expert
 ```
+**Trigger**: ReviewAgent identifies missing critical data
+**Mechanism**: `additional_query` is set to natural language data request
+**Example**: "I need the customer's transaction history for the past 6 months"
 
-#### **Option B: Needs Additional Data** 🔄
+### Loop 2: Refinement Loop
 ```
-review_status = "needs_data"
-additional_query = "Get the customer's transaction history for last 6 months"
+Compliance Expert → Review Agent (needs_refinement) → Compliance Expert
+```
+**Trigger**: ReviewAgent finds quality issues (wrong typology, unclear explanation)
+**Mechanism**: `review_feedback` provides specific improvement guidance
+**Example**: "The structuring typology is incorrectly identified; transactions don't match the pattern"
 
-→ Route to Intent Mapper (with additional_query as new user_query)
-→ Intent Mapper interprets the additional data request
-→ Data Retrieval fetches MORE data
-→ Compliance Expert re-analyzes with COMBINED data (old + new)
-→ Self-review again
-→ [Loop until passed or max attempts]
+### Loop 3: Clarification Loop
 ```
-
-#### **Option C: Needs Refinement** 🔁
+Intent Mapper (ambiguous query) → END (clarification request to user)
+Review Agent (needs_clarification) → END (clarification request to user)
 ```
-review_status = "needs_refinement"
-review_feedback = "Analysis is too shallow, need to address typology X"
-
-→ Route back to Compliance Expert (with same data + feedback)
-→ Compliance Expert regenerates response with feedback guidance
-→ Self-review again
-→ [Loop until passed or max attempts]
-```
+**Trigger**: Query is too ambiguous to process
+**Mechanism**: Return `clarification_question` to user
+**Example**: "Please clarify: are you asking about alert A123 or the customer's overall profile?"
 
 ---
 
-## Self-Review Criteria
+## Safety Mechanisms
 
-The Compliance Expert evaluates its own response against:
+### 1. Max Attempts Limit
+- **Limit**: 3 review cycles total
+- **Trigger**: `review_attempts >= 3`
+- **Action**: Force `passed` status and return current response
+- **Purpose**: Prevent infinite loops
 
-1. **Completeness**: Does it fully answer the user's question?
-2. **Data Sufficiency**: Is there enough data to provide accurate analysis?
-3. **Accuracy**: Are facts, figures, and typologies correct?
-4. **Clarity**: Is the response clear and well-structured?
-5. **Regulatory Compliance**: Are regulatory references appropriate?
-6. **Actionability**: Does it provide clear next steps?
+### 2. Scope Validation
+- **Trigger**: Query is not AML/compliance-related
+- **Action**: Return rejection message immediately
+- **Purpose**: Prevent misuse and wasted resources
 
-### Review Outcomes:
-
-| Status | Meaning | Action |
-|--------|---------|--------|
-| `passed` | Response meets all quality standards | Return to user |
-| `needs_data` | Missing critical information | Request additional data via intent mapper |
-| `needs_refinement` | Analysis quality issues | Regenerate with feedback |
+### 3. Fail-Safe Review
+- **Trigger**: ReviewAgent JSON parsing fails
+- **Action**: Default to `passed` with low confidence
+- **Purpose**: System continues even with review errors
 
 ---
 
-## State Management
+## Example Scenarios
 
-### Key State Fields:
+### Scenario 1: Simple Data Query (Success)
+```
+User: "What is the risk score for customer C000123?"
 
-```python
-# Core
-user_query: str                    # Current query being processed
-context: Dict[str, Any]           # Customer context (cif_no, alert_id, etc.)
-
-# Agent Outputs
-intent: IntentMapping             # From intent mapper
-retrieved_data: DataRetrievalResult  # From data retrieval
-compliance_analysis: ComplianceAnalysis  # From compliance expert
-final_response: str               # User-facing response
-
-# Self-Review (NEW)
-review_status: "passed" | "needs_data" | "needs_refinement"
-review_feedback: str              # Why review failed
-additional_query: Optional[str]   # Natural language request for missing data
-review_attempts: int              # Number of review iterations
-
-# Routing
-next_agent: str                   # Which agent to route to
-current_step: str                 # Current workflow step
-completed: bool                   # Workflow finished?
+1. Coordinator: in_scope=true → intent_mapper
+2. Intent Mapper: Maps to get_customer_risk_features → data_retrieval
+3. Data Retrieval: Fetches risk_score=85 → compliance_expert
+4. Compliance Expert: "Customer C000123 has a risk score of 85 (High)" → review_agent
+5. Review Agent: review_status=passed → END
 ```
 
----
+### Scenario 2: Missing Data Loop
+```
+User: "Assess alert A456 for customer C000123"
 
-## Adaptive Capabilities
+1. Coordinator → Intent Mapper → Data Retrieval → Compliance Expert
+2. Compliance Expert: Generates initial response → review_agent
+3. Review Agent: "Missing transaction history needed to assess alert" 
+   - review_status=needs_data
+   - additional_query="Get all transactions for customer C000123 in the past 6 months"
+4. Intent Mapper: (processes additional_query) → data_retrieval
+5. Data Retrieval: Fetches transactions → compliance_expert
+6. Compliance Expert: Complete assessment with transaction data → review_agent
+7. Review Agent: review_status=passed → END
+```
 
-### 🔄 **Automatic Data Enrichment**
-If the expert realizes mid-analysis that it needs more data:
-- Generates natural language query: `"Get alert investigation notes for alert A123"`
-- Intent mapper translates to tool calls
-- System fetches additional data automatically
-- Expert continues with enriched context
+### Scenario 3: Out of Scope
+```
+User: "What's the weather today?"
 
-### 🎯 **Quality Assurance**
-Every response is self-reviewed before reaching the user:
-- Catches incomplete analyses
-- Identifies missing data early
-- Ensures compliance standards are met
+1. Coordinator: in_scope=false 
+   - out_of_scope_message="I'm an AML compliance assistant..."
+   → END
+```
 
-### 🛡️ **Safety Limits**
-- `MAX_REVIEW_ATTEMPTS = 3` (configurable)
-- After max attempts, returns best effort response
-- Prevents infinite loops
+### Scenario 4: Ambiguous Query
+```
+User: "Show me the data"
+
+1. Coordinator → Intent Mapper
+2. Intent Mapper: needs_clarification=true
+   - clarification_question="Which data would you like to see? Please specify: customer info, transactions, alerts, or risk features?"
+   → END
+```
+
+### Scenario 5: Refinement Loop
+```
+User: "Is this customer involved in structuring?"
+
+1-4. (Normal flow through data retrieval and compliance expert)
+5. Review Agent: "Incorrectly identified structuring - transactions don't show amounts near $10k threshold"
+   - review_status=needs_refinement
+   - review_feedback="Re-evaluate typology. Check if transaction pattern actually matches structuring definition."
+6. Compliance Expert: (retries with feedback) → review_agent
+7. Review Agent: review_status=passed → END
+```
 
 ---
 
 ## Configuration
 
-Each agent uses configurable LLM settings:
+Each agent can be configured with:
+- `model_name`: LLM model to use
+- `temperature`: Creativity/randomness (0.0-1.0)
+- `max_retries`: API retry attempts
+- `timeout`: Request timeout
 
-```python
-# .env configuration
-COORDINATOR_MODEL=gpt-4o          # Orchestration
-INTENT_MAPPER_MODEL=gpt-4o        # Query understanding
-DATA_RETRIEVAL_MODEL=gpt-4o-mini  # Tool execution (simpler)
-COMPLIANCE_EXPERT_MODEL=gpt-4o    # Domain expertise (most critical)
-
-# Per-agent settings
-- model_name
-- temperature
-- max_retries
-- timeout
-```
+Review Agent uses the same config as Compliance Expert by default.
 
 ---
 
-## Checkpointing & Sessions
+## References
 
-- **Redis Checkpointer** (db=1): Stores conversation state
-- **Session-based**: Each user session maintains separate state
-- **Resumable**: Conversations can be continued across requests
-- **Cache-separate**: Data cache (db=0) isolated from checkpoints (db=1)
-
----
-
-## Error Handling
-
-### Tool Execution Errors
-- Data retrieval agent catches tool failures
-- Returns partial data with error messages
-- Compliance expert can request retry or work with partial data
-
-### Review Failures
-- If self-review fails to parse: assume "passed" (fail-safe)
-- If max attempts exceeded: return final_response with warning
-- All review attempts logged in state
-
-### LLM Failures
-- Each agent has `max_retries` configuration
-- Timeouts prevent hanging
-- Graceful degradation to simpler responses
-
----
-
-## Future Enhancements
-
-- [ ] Human-in-the-loop approval (using LangGraph interrupts)
-- [ ] Multi-turn conversation memory
-- [ ] Tool recommendation learning
-- [ ] Dynamic feature group selection
-- [ ] Compliance rule engine integration
-
----
-
-## See Also
-
-- [Architecture Documentation](./ARCHITECTURE.md)
-- [Implementation Plan](./objective.md)
-- [API Documentation](./api/README.md)
+- State Schema: `agents/state.py`
+- Prompts: `agents/prompts.py`
+- Graph Definition: `agents/graph.py`
+- Individual Agents: `agents/*.py`

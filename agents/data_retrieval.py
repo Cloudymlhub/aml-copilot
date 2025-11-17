@@ -11,13 +11,12 @@ from config.agent_config import AgentConfig
 class DataRetrievalAgent:
     """Data retrieval agent that executes queries using available tools."""
 
-    def __init__(self, config: AgentConfig):
+    def __init__(self):
         """Initialize data retrieval agent.
         
         Args:
             config: Agent configuration (currently unused, reserved for future LLM-based retrieval)
         """
-        self.config = config
         # Load all tools
         self.tools = get_all_tools()
         self.tool_map = {tool.name: tool for tool in self.tools}
@@ -134,7 +133,7 @@ class DataRetrievalAgent:
         }
 
 
-def create_data_retrieval_node(config: AgentConfig):
+def create_data_retrieval_node():
     """Create data retrieval node for LangGraph.
 
     Args:
@@ -143,5 +142,5 @@ def create_data_retrieval_node(config: AgentConfig):
     Returns:
         Data retrieval agent callable
     """
-    agent = DataRetrievalAgent(config)
+    agent = DataRetrievalAgent()
     return agent
