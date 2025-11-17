@@ -27,6 +27,7 @@ class ComplianceExpertAgent:
             timeout=config.timeout,
         )
 
+
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Provide compliance expertise and analysis.
 
@@ -87,6 +88,11 @@ class ComplianceExpertAgent:
             retrieved_data=data_str,
             compliance_analysis=json.dumps(compliance_analysis, indent=2)
         )
+        
+        # Add review feedback if this is a retry (from ReviewAgent)
+        previous_feedback = state.get("review_feedback")
+        if previous_feedback:
+            synthesis_prompt += f"\n\nPREVIOUS REVIEW FEEDBACK (address these issues):\n{previous_feedback}"
 
         synthesis_messages = [
             SystemMessage(content="You are synthesizing a final response for the user. Be clear and professional."),
@@ -96,19 +102,14 @@ class ComplianceExpertAgent:
         final_response_msg = self.llm.invoke(synthesis_messages)
         final_response = final_response_msg.content
 
+        # Return analysis and response (ReviewAgent will evaluate this)
         return {
             "compliance_analysis": compliance_analysis,
             "final_response": final_response,
-            "next_agent": "end",
-            "current_step": "completed",
-            "completed": True,
-            "messages": state["messages"] + [
-                {
-                    "role": "assistant",
-                    "content": final_response,
-                    "timestamp": str(state.get("started_at", ""))
-                }
-            ]
+            "next_agent": "review_agent",  # Route to review
+            "current_step": "compliance_completed",
+            "completed": False,  # Not done until review passes
+            "messages": state["messages"]  # ReviewAgent will decide if we add to messages
         }
 
 

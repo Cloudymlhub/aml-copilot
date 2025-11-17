@@ -64,6 +64,13 @@ class AMLCopilotState(TypedDict):
 
     # Final Response
     final_response: Optional[str]
+    
+    # Review System (NEW in Phase 4)
+    review_status: Optional[Literal["passed", "needs_data", "needs_refinement", "needs_clarification", "human_review"]]
+    review_feedback: Optional[str]  # Detailed review comments
+    additional_query: Optional[str]  # Natural language request for missing data or clarification
+    review_agent_id: Optional[str]  # Which model/agent performed review
+    review_attempts: Optional[int]  # Number of review iterations
 
     # Metadata
     session_id: str

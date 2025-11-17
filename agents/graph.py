@@ -9,7 +9,9 @@ from .coordinator import create_coordinator_node
 from .intent_mapper import create_intent_mapper_node
 from .data_retrieval import create_data_retrieval_node
 from .compliance_expert import create_compliance_expert_node
+from .review_agent import create_review_agent_node
 from config.agent_config import AgentsConfig
+from config.settings import settings
 
 
 def route_after_coordinator(state: AMLCopilotState) -> str:
@@ -49,14 +51,55 @@ def route_after_data_retrieval(state: AMLCopilotState) -> str:
 
 
 def route_after_compliance_expert(state: AMLCopilotState) -> str:
-    """Route after compliance expert.
+    """Route after compliance expert to review agent.
 
     Args:
         state: Current state
 
     Returns:
-        Next node name (usually END)
+        Next node name: always "review_agent"
     """
+    # Compliance expert always routes to review agent
+    return "review_agent"
+
+
+def route_after_review(state: AMLCopilotState) -> str:
+    """Route after review agent based on review outcome.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Next node name: "intent_mapper" | "compliance_expert" | "coordinator" | END
+    """
+    review_status = state.get("review_status", "passed")
+    review_attempts = state.get("review_attempts", 0) or 0
+    
+    # Max attempts exceeded - return to user
+    if review_attempts >= settings.max_review_attempts:
+        return END
+    
+    # Review passed - complete
+    if review_status == "passed":
+        return END
+    
+    # Needs additional data - route to intent mapper with additional_query
+    if review_status == "needs_data":
+        return "intent_mapper"
+    
+    # Needs refinement - route back to compliance expert
+    if review_status == "needs_refinement":
+        return "compliance_expert"
+    
+    # Needs clarification - route to coordinator (which will end and ask user)
+    if review_status == "needs_clarification":
+        return END  # Return clarification message to user
+    
+    # Human review required - end for human intervention
+    if review_status == "human_review":
+        return END
+    
+    # Default: end
     return END
 
 
@@ -86,6 +129,7 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     workflow.add_node("intent_mapper", create_intent_mapper_node(agents_config.intent_mapper))
     workflow.add_node("data_retrieval", create_data_retrieval_node(agents_config.data_retrieval))
     workflow.add_node("compliance_expert", create_compliance_expert_node(agents_config.compliance_expert))
+    workflow.add_node("review_agent", create_review_agent_node(agents_config.compliance_expert))  # Use same config as compliance expert
 
     # Set entry point
     workflow.set_entry_point("coordinator")
@@ -114,12 +158,23 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         }
     )
 
-    # Compliance expert always ends
+    # Compliance expert always routes to review agent
     workflow.add_conditional_edges(
         "compliance_expert",
         route_after_compliance_expert,
         {
-            END: END
+            "review_agent": "review_agent"
+        }
+    )
+
+    # Review agent routes based on review outcome
+    workflow.add_conditional_edges(
+        "review_agent",
+        route_after_review,
+        {
+            "intent_mapper": "intent_mapper",  # Needs more data
+            "compliance_expert": "compliance_expert",  # Needs refinement
+            END: END  # Passed, needs clarification, or human review
         }
     )
 

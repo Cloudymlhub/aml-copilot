@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     compliance_expert_max_retries: int = 3
     compliance_expert_timeout: int = 120  # More time for complex analysis
 
+    # Review system settings
+    max_review_attempts: int = 3  # Maximum number of review cycles before forcing completion
+
     # Agent settings
     max_agent_iterations: int = 10
     agent_timeout: int = 300  # seconds

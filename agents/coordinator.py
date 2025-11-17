@@ -53,6 +53,28 @@ class CoordinatorAgent:
             # Parse JSON response
             result = json.loads(response.content)
 
+            in_scope = result.get("in_scope", True)
+            
+            # Handle out-of-scope or partially-related queries
+            if in_scope == False or in_scope == "partial":
+                guidance_msg = result.get("guidance_message", 
+                    "I'm an AML compliance assistant. I can help with questions related to anti-money laundering, customer due diligence, transaction monitoring, and financial crimes compliance.")
+                
+                return {
+                    "next_agent": "end",
+                    "current_step": "out_of_scope" if in_scope == False else "needs_refinement",
+                    "completed": True,
+                    "final_response": guidance_msg,
+                    "messages": state["messages"] + [
+                        {
+                            "role": "assistant",
+                            "content": guidance_msg,
+                            "timestamp": str(state.get("started_at", ""))
+                        }
+                    ]
+                }
+
+            # In-scope query: normal routing
             next_agent = result.get("next_agent", "intent_mapper")
             query_type = result.get("query_type", "data_query")
             reasoning = result.get("reasoning", "")

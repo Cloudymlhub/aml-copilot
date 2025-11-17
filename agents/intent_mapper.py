@@ -36,7 +36,13 @@ class IntentMappingAgent:
         Returns:
             Updated state with intent mapping
         """
-        user_query = state["user_query"]
+        # Check if this is an additional data request from compliance expert
+        additional_query = state.get("additional_query")
+        if additional_query:
+            # Use additional_query instead of user_query for data retrieval
+            user_query = additional_query
+        else:
+            user_query = state["user_query"]
         
         # Get CIF from context (no longer extracted from query!)
         context = state.get("context", {})
@@ -71,6 +77,28 @@ class IntentMappingAgent:
             # Parse JSON response
             result = json.loads(response.content)
 
+            # Check if clarification is needed
+            needs_clarification = result.get("needs_clarification", False)
+            if needs_clarification:
+                clarification_question = result.get("clarification_question", 
+                    "Could you please provide more specific details about your request?")
+                
+                return {
+                    "review_status": "needs_clarification",
+                    "additional_query": clarification_question,
+                    "next_agent": "end",  # Return to user for clarification
+                    "current_step": "intent_needs_clarification",
+                    "final_response": clarification_question,
+                    "completed": False,
+                    "messages": state["messages"] + [
+                        {
+                            "role": "assistant",
+                            "content": clarification_question,
+                            "timestamp": str(state.get("started_at", ""))
+                        }
+                    ]
+                }
+
             # Add CIF from context to entities
             if "entities" not in result:
                 result["entities"] = {}
@@ -90,6 +118,7 @@ class IntentMappingAgent:
                 "intent": intent,
                 "next_agent": "data_retrieval",
                 "current_step": "intent_mapped",
+                "additional_query": None,  # Clear additional_query after processing
                 "messages": state["messages"] + [
                     {
                         "role": "assistant",
@@ -112,6 +141,7 @@ class IntentMappingAgent:
                 "intent": intent,
                 "next_agent": "data_retrieval",
                 "current_step": "intent_mapped",
+                "additional_query": None,  # Clear additional_query after processing
                 "messages": state["messages"] + [
                     {
                         "role": "assistant",
