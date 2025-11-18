@@ -1,6 +1,8 @@
 """Data Retrieval Agent - Executes data queries using tools."""
 
 from typing import Dict, Any, List
+import inspect
+import logging
 from langchain.tools import BaseTool
 
 from tools import get_all_tools
@@ -20,6 +22,7 @@ class DataRetrievalAgent:
         # Load all tools
         self.tools = get_all_tools()
         self.tool_map = {tool.name: tool for tool in self.tools}
+        self.logger = logging.getLogger(__name__)
 
     def _execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool with arguments.
@@ -38,9 +41,11 @@ class DataRetrievalAgent:
 
         try:
             # Execute tool
+            self.logger.info("DataRetrieval: executing tool %s with args keys=%s", tool_name, list(args.keys()))
             result = tool._run(**args)
             return result
         except Exception as e:
+            self.logger.exception("DataRetrieval: tool %s failed", tool_name)
             return {"error": f"Tool execution failed: {str(e)}"}
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
@@ -52,6 +57,7 @@ class DataRetrievalAgent:
         Returns:
             Updated state with retrieved data
         """
+        self.logger.info("DataRetrieval: invoked with session=%s", state.get("session_id"))
         intent = state.get("intent")
 
         if not intent:
@@ -84,18 +90,40 @@ class DataRetrievalAgent:
         all_data = {}
         tools_used = []
         errors = []
+        error_details = []
 
         for tool_spec in tools_to_use:
             # Handle both dict and string formats
             if isinstance(tool_spec, dict):
                 tool_name = tool_spec.get("tool", "")
-                tool_args = tool_spec.get("args", {})
+                tool_args = tool_spec.get("args", {}) or {}
             else:
                 # Simple string tool name - extract args from entities
                 tool_name = tool_spec
                 tool_args = intent.get("entities", {})
 
             if not tool_name:
+                continue
+
+            # Validate required args against tool signature
+            tool = self.tool_map.get(tool_name)
+            required_params = []
+            if tool:
+                sig = inspect.signature(tool._run)
+                required_params = [
+                    name
+                    for name, param in sig.parameters.items()
+                    if name != "self"
+                    and param.default is inspect._empty
+                    and param.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+                ]
+
+            missing_params = [p for p in required_params if p not in tool_args]
+            if missing_params:
+                msg = f"Missing required args for {tool_name}: {', '.join(missing_params)}"
+                errors.append(f"{tool_name}: {msg}")
+                error_details.append({"tool": tool_name, "error": msg})
+                self.logger.warning("DataRetrieval: skipping tool %s due to missing args: %s", tool_name, missing_params)
                 continue
 
             # Execute tool
@@ -105,6 +133,7 @@ class DataRetrievalAgent:
             # Store result
             if "error" in result:
                 errors.append(f"{tool_name}: {result['error']}")
+                error_details.append({"tool": tool_name, "error": result["error"]})
             else:
                 all_data[tool_name] = result
 
@@ -113,7 +142,8 @@ class DataRetrievalAgent:
             "success": len(errors) == 0,
             "data": all_data,
             "tools_used": tools_used,
-            "error": "; ".join(errors) if errors else None
+            "error": "; ".join(errors) if errors else None,
+            "errors": error_details if error_details else None
         }
 
         # Determine next step

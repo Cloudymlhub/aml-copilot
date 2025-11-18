@@ -1,6 +1,7 @@
 """Intent Mapping Agent - Maps natural language to data queries."""
 
 import json
+import logging
 from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -39,6 +40,7 @@ class IntentMappingAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
+        self.logger = logging.getLogger(__name__)
 
         # Load all available tools from registry
         self.available_tools = get_all_tools()
@@ -60,6 +62,7 @@ class IntentMappingAgent:
         Returns:
             Updated state with intent mapping
         """
+        self.logger.info("IntentMapper: invoked for session=%s", state.get("session_id"))
         # Check if this is a replanning request from Review Agent
         additional_query = state.get("additional_query")
         if additional_query:

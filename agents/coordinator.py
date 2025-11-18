@@ -1,6 +1,7 @@
 """Coordinator Agent - Routes queries to appropriate specialized agents."""
 
 import json
+import logging
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -28,6 +29,7 @@ class CoordinatorAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
+        self.logger = logging.getLogger(__name__)
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Route the query to appropriate agent.
@@ -39,21 +41,36 @@ class CoordinatorAgent:
             Updated state with routing decision
         """
         user_query = state["user_query"]
+        self.logger.info("Coordinator: invoked for session=%s", state.get("session_id"))
 
-        # Create prompt
-        prompt = COORDINATOR_PROMPT.format(user_query=user_query)
+        def _build_messages(invalid: bool = False):
+            """Construct system/human messages with optional retry notice."""
+            human_prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
+            human_content = f"{human_prefix}User query: {user_query}"
+            return [
+                SystemMessage(content=COORDINATOR_PROMPT),
+                HumanMessage(content=human_content)
+            ]
 
-        # Get routing decision from LLM
-        messages = [
-            SystemMessage(content="You are a coordinator agent. Respond ONLY with valid JSON."),
-            HumanMessage(content=prompt)
-        ]
-        
-        response = self.llm.invoke(messages)
+        def _parse_response(raw_response):
+            try:
+                return json.loads(raw_response.content)
+            except json.JSONDecodeError:
+                return None
+
+        # Primary attempt
+        response = self.llm.invoke(_build_messages())
+        result = _parse_response(response)
+
+        # One-time retry if JSON parsing failed
+        if result is None:
+            self.logger.warning("Coordinator: invalid JSON, retrying once")
+            retry_response = self.llm.invoke(_build_messages(invalid=True))
+            result = _parse_response(retry_response)
 
         try:
-            # Parse JSON response
-            result = json.loads(response.content)
+            if result is None:
+                raise json.JSONDecodeError("Invalid JSON from coordinator", "", 0)
 
             in_scope = result.get("in_scope", True)
             

@@ -1,6 +1,7 @@
 """Review Agent - Quality assurance for compliance responses."""
 
 import json
+import logging
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -30,6 +31,7 @@ class ReviewAgent:
             api_key=settings.openai_api_key,
         )
         self.max_review_attempts = config.max_review_attempts
+        self.logger = logging.getLogger(__name__)
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
         """Review compliance expert output and determine next steps.
@@ -40,6 +42,7 @@ class ReviewAgent:
         Returns:
             Updated state with review results and routing decision
         """
+        self.logger.info("ReviewAgent: invoked for session=%s attempt=%s", state.get("session_id"), state.get("review_attempts", 0))
         user_query = state["user_query"]
         final_response = state.get("final_response", "")
         compliance_analysis = state.get("compliance_analysis", {})
@@ -69,28 +72,39 @@ class ReviewAgent:
         retrieved_data_str = json.dumps(retrieved_data.get("data", {}) if retrieved_data else {}, indent=2)
         analysis_str = json.dumps(compliance_analysis, indent=2)
 
-        # Create review prompt
-        prompt = REVIEW_AGENT_PROMPT.format(
-            user_query=user_query,
-            final_response=final_response,
-            compliance_analysis=analysis_str,
-            retrieved_data=retrieved_data_str
-        )
+        def _build_messages(invalid: bool = False):
+            """Construct system/human messages with optional retry notice."""
+            prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
+            human_content = (
+                f"{prefix}Original user query: {user_query}\n"
+                f"Generated response: {final_response}\n"
+                f"Compliance analysis (internal): {analysis_str}\n"
+                f"Retrieved data: {retrieved_data_str}"
+            )
+            return [
+                SystemMessage(content=REVIEW_AGENT_PROMPT),
+                HumanMessage(content=human_content)
+            ]
 
-        messages = [
-            SystemMessage(content="You are a QA reviewer for AML compliance responses. Be thorough and objective."),
-            HumanMessage(content=prompt)
-        ]
+        def _parse_json(raw_response):
+            try:
+                return json.loads(raw_response.content)
+            except json.JSONDecodeError:
+                return None
 
-        review_response = self.llm.invoke(messages)
+        review_response = self.llm.invoke(_build_messages())
+        review_result = _parse_json(review_response)
 
-        try:
-            review_result = json.loads(review_response.content)
+        if review_result is None:
+            retry_response = self.llm.invoke(_build_messages(invalid=True))
+            review_result = _parse_json(retry_response)
+
+        if review_result:
             review_status = review_result.get("review_status", "passed")
             review_feedback = review_result.get("review_feedback", "Review completed.")
             additional_query = review_result.get("additional_query")
             confidence = review_result.get("confidence", 1.0)
-        except json.JSONDecodeError:
+        else:
             # Fail-safe: if we can't parse, pass the review
             review_status = "passed"
             review_feedback = "Review completed (unable to parse structured output)."

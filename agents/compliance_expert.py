@@ -1,6 +1,7 @@
 """Compliance Expert Agent - Provides AML domain expertise and interpretation."""
 
 import json
+import logging
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -28,6 +29,7 @@ class ComplianceExpertAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
+        self.logger = logging.getLogger(__name__)
 
 
     def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
@@ -39,8 +41,10 @@ class ComplianceExpertAgent:
         Returns:
             Updated state with compliance analysis and final response
         """
+        self.logger.info("ComplianceExpert: invoked for session=%s", state.get("session_id"))
         user_query = state["user_query"]
         retrieved_data = state.get("retrieved_data")
+        intent_payload = state.get("intent", {})
 
         # Format retrieved data for prompt
         if retrieved_data and retrieved_data.get("success"):
@@ -48,35 +52,48 @@ class ComplianceExpertAgent:
         else:
             data_str = "No data retrieved" if retrieved_data else "No data retrieval attempted"
 
-        # Create prompt
-        prompt = COMPLIANCE_EXPERT_PROMPT.format(
-            user_query=user_query,
-            retrieved_data=data_str
-        )
+        intent_str = json.dumps(intent_payload, indent=2)
 
-        # Get compliance analysis from LLM
-        messages = [
-            SystemMessage(content="You are an AML compliance expert. Provide thorough, accurate analysis."),
-            HumanMessage(content=prompt)
-        ]
+        def _build_analysis_messages(invalid: bool = False):
+            """Construct messages for compliance analysis, with optional retry notice."""
+            prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
+            human_content = (
+                f"{prefix}User query: {user_query}\n"
+                f"Intent (if any): {intent_str}\n"
+                f"Retrieved data:\n{data_str}"
+            )
+            return [
+                SystemMessage(content=COMPLIANCE_EXPERT_PROMPT),
+                HumanMessage(content=human_content)
+            ]
 
-        response = self.llm.invoke(messages)
+        def _parse_json(raw_response):
+            try:
+                return json.loads(raw_response.content)
+            except json.JSONDecodeError:
+                return None
 
-        try:
-            # Try to parse JSON response
-            result = json.loads(response.content)
+        # Primary attempt
+        analysis_response = self.llm.invoke(_build_analysis_messages())
+        analysis_result = _parse_json(analysis_response)
 
+        # One-time retry if JSON parsing failed
+        if analysis_result is None:
+            retry_response = self.llm.invoke(_build_analysis_messages(invalid=True))
+            analysis_result = _parse_json(retry_response)
+
+        if analysis_result:
             compliance_analysis: ComplianceAnalysis = {
-                "analysis": result.get("analysis", response.content),
-                "risk_assessment": result.get("risk_assessment"),
-                "typologies": result.get("typologies", []),
-                "recommendations": result.get("recommendations", []),
-                "regulatory_references": result.get("regulatory_references", [])
+                "analysis": analysis_result.get("analysis", analysis_response.content),
+                "risk_assessment": analysis_result.get("risk_assessment"),
+                "typologies": analysis_result.get("typologies", []),
+                "recommendations": analysis_result.get("recommendations", []),
+                "regulatory_references": analysis_result.get("regulatory_references", [])
             }
-        except json.JSONDecodeError:
+        else:
             # If not JSON, treat entire response as analysis
             compliance_analysis: ComplianceAnalysis = {
-                "analysis": response.content,
+                "analysis": analysis_response.content,
                 "risk_assessment": None,
                 "typologies": [],
                 "recommendations": [],
@@ -84,21 +101,21 @@ class ComplianceExpertAgent:
             }
 
         # Synthesize final response
-        synthesis_prompt = RESPONSE_SYNTHESIS_PROMPT.format(
-            user_query=user_query,
-            intent=json.dumps(state.get("intent", {}), indent=2),
-            retrieved_data=data_str,
-            compliance_analysis=json.dumps(compliance_analysis, indent=2)
+        synthesis_human = (
+            f"User query: {user_query}\n"
+            f"Intent: {intent_str}\n"
+            f"Retrieved data:\n{data_str}\n"
+            f"Compliance analysis:\n{json.dumps(compliance_analysis, indent=2)}"
         )
-        
+
         # Add review feedback if this is a retry (from ReviewAgent)
         previous_feedback = state.get("review_feedback")
         if previous_feedback:
-            synthesis_prompt += f"\n\nPREVIOUS REVIEW FEEDBACK (address these issues):\n{previous_feedback}"
+            synthesis_human += f"\n\nPrevious review feedback (address these issues):\n{previous_feedback}"
 
         synthesis_messages = [
-            SystemMessage(content="You are synthesizing a final response for the user. Be clear and professional."),
-            HumanMessage(content=synthesis_prompt)
+            SystemMessage(content=RESPONSE_SYNTHESIS_PROMPT),
+            HumanMessage(content=synthesis_human)
         ]
 
         final_response_msg = self.llm.invoke(synthesis_messages)

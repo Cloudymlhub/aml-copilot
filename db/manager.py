@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from typing import Generator
+import logging
 import psycopg2
 from psycopg2 import pool, extras
 from psycopg2.extensions import connection as PGConnection
@@ -20,6 +21,7 @@ class DatabaseManager:
         """
         self.database_url = database_url or settings.database_url
         self._connection_pool: pool.SimpleConnectionPool | None = None
+        self.logger = logging.getLogger(__name__)
 
     @property
     def connection_pool(self) -> pool.SimpleConnectionPool:
@@ -50,6 +52,7 @@ class DatabaseManager:
                 # Auto-rolls back if exception occurs
         """
         conn = self.connection_pool.getconn()
+        self.logger.info("DB: acquired connection from pool")
         try:
             yield conn
             conn.commit()
@@ -57,6 +60,7 @@ class DatabaseManager:
             conn.rollback()
             raise
         finally:
+            self.logger.info("DB: returning connection to pool")
             self.connection_pool.putconn(conn)
 
     @contextmanager
@@ -84,8 +88,10 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor(cursor_factory=cursor_factory)
             try:
+                self.logger.info("DB: opened cursor")
                 yield cursor
             finally:
+                self.logger.info("DB: closing cursor")
                 cursor.close()
 
     def close_all_connections(self):

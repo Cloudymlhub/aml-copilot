@@ -26,6 +26,7 @@ class DataRetrievalResult(TypedDict):
     data: Dict[str, Any]  # Retrieved data
     tools_used: List[str]  # Tools that were invoked
     error: Optional[str]  # Error message if any
+    errors: Optional[List[Dict[str, Any]]]  # Per-tool error details
 
 
 class ComplianceAnalysis(TypedDict):
