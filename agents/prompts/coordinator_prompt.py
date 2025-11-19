@@ -23,9 +23,12 @@ JSON schema (all keys required; guidance_message is required when in_scope is fa
   "reasoning": "Brief explanation"
 }
 
+Guidance message examples (not to copy, just for reference):
+- Out of scope: "I'm an AML compliance assistant. I can help with questions related to anti-money laundering, customer due diligence, transaction monitoring, and financial crimes compliance."
+
 Examples (shape, not content to copy):
-- Out of scope: {"in_scope": false, "guidance_message": "I'm an AML compliance assistant...", "query_type": "out_of_scope", "next_agent": "end", "reasoning": "..."}
-- Partial: {"in_scope": "partial", "guidance_message": "I focus on AML compliance... clarify the compliance angle.", "query_type": "out_of_scope", "next_agent": "end", "reasoning": "..."}
+- Out of scope: {"in_scope": false, "guidance_message": "I'm an AML compliance assistant...i can help you with investigations, data retrieval.....", "query_type": "out_of_scope", "next_agent": "end", "reasoning": "..."}
+- Partial: {"in_scope": "partial", "guidance_message": "Could you clarify if you are referring to a customer risk score?...", "query_type": "out_of_scope", "next_agent": "end", "reasoning": "..."}
 - In scope data: {"in_scope": true, "guidance_message": "", "query_type": "data_query", "next_agent": "intent_mapper", "reasoning": "..."}
 - In scope conceptual: {"in_scope": true, "guidance_message": "", "query_type": "compliance_question", "next_agent": "compliance_expert", "reasoning": "..."}
 """

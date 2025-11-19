@@ -747,23 +747,58 @@ class DataService:
 
 ## Agent Flow
 
+The system uses five specialized agents with adaptive review loops:
+
 ```
-User: "Show me high risk customers with transactions over $50k"
+START
   ↓
-Coordinator Agent
+┌─────────────┐
+│ Coordinator │ Scope validation (in-scope/out-of-scope)
+└─────────────┘
   ↓
-Intent Mapping Agent
-  → Identifies: risk_score > 70, sum_txn_amount_w0_90 > 50000
-  ↓
-Data Retrieval Agent
-  → Calls db_tools.query_high_risk_customers(threshold=70, amount=50000)
-  → Service layer checks cache, queries DB, formats data
-  ↓
-Compliance Expert Agent
-  → Analyzes results, provides typology mapping, suggests actions
-  ↓
-Response to User
+  ├─ OUT OF SCOPE ──────────────────→ END (rejection message)
+  │
+  ├─ Compliance question (no data) → Compliance Expert
+  │
+  └─ Data query
+       ↓
+  ┌──────────────┐
+  │ Intent Mapper │ Map query to tools, check clarity
+  └──────────────┘
+       ↓
+       ├─ NEEDS CLARIFICATION ───────→ END (ask user)
+       │
+       └─ MAPPABLE
+            ↓
+       ┌────────────────┐
+       │ Data Retrieval  │ Execute tools, fetch data
+       └────────────────┘
+            ↓
+       ┌────────────────────┐
+       │ Compliance Expert  │ Analyze & synthesize
+       └────────────────────┘
+            ↓
+       ┌──────────────┐
+       │ Review Agent │ QA evaluation (5-way routing)
+       └──────────────┘
+            ↓
+            ├─ PASSED ───────────────────────→ END (success)
+            ├─ NEEDS DATA ───────────────────→ Intent Mapper (additional_query)
+            ├─ NEEDS REFINEMENT ─────────────→ Compliance Expert (retry)
+            ├─ NEEDS CLARIFICATION ──────────→ END (ask user)
+            ├─ HUMAN REVIEW ─────────────────→ END (flag for human)
+            └─ MAX ATTEMPTS (3) ─────────────→ END (force completion)
 ```
+
+**Adaptive Loops:**
+1. **Data Loop**: Review Agent → Intent Mapper → Data Retrieval → Compliance Expert (when more data needed)
+2. **Refinement Loop**: Review Agent → Compliance Expert (when quality issues found)
+3. **Clarification Loop**: Intent Mapper or Review Agent → User (when query ambiguous)
+
+**Safety Mechanisms:**
+- Max review attempts (default: 3) prevents infinite loops
+- Scope validation filters non-AML queries early
+- Fail-safe defaults ensure system continues even with review errors
 
 ## Configuration
 
@@ -1059,6 +1094,53 @@ Final response (natural language):
 
 Customer C000001 presents a low-medium AML risk profile...
 ```
+
+#### 5. Review Agent (`agents/review_agent.py`)
+
+**Role:** Quality Assurance & Adaptive Routing
+
+**Input:** Compliance Expert output
+**Output:** Review decision (5 possible outcomes)
+
+**No tools** - Uses LLM (GPT-4o) to evaluate:
+1. **Completeness**: Does it fully answer the query?
+2. **Data Sufficiency**: Is critical data missing?
+3. **Accuracy**: Are insights and typologies correct?
+4. **Clarity**: Is the response understandable?
+5. **Actionability**: Are next steps clear?
+
+**5-Way Routing:**
+- `passed` → Return to user (quality approved)
+- `needs_data` → Route to Intent Mapper with `additional_query`
+- `needs_refinement` → Route back to Compliance Expert with feedback
+- `needs_clarification` → Ask user for more information
+- `human_review` → Flag for human intervention
+
+**Example (needs_data):**
+```python
+Input:
+User query: "Assess alert A123 for structuring"
+Compliance output: Analysis without transaction history
+
+Review Agent evaluates:
+{
+    "review_status": "needs_data",
+    "review_feedback": "Cannot assess structuring without transaction patterns",
+    "additional_query": "Get all transactions for this customer in past 6 months",
+    "confidence": 0.85
+}
+
+→ Routes back to Intent Mapper with additional_query
+→ Intent Mapper maps to get_transactions_by_date_range
+→ Data Retrieval fetches transactions
+→ Compliance Expert re-analyzes with complete data
+→ Review Agent evaluates again → passed
+```
+
+**Loop Prevention:**
+- `MAX_REVIEW_ATTEMPTS` (default: 3) limits review cycles
+- After max attempts, forces `passed` status
+- Prevents infinite refinement loops
 
 ## Workflow Examples
 

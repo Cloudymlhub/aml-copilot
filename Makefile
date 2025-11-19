@@ -175,19 +175,6 @@ redis-info: ## Show Redis info and stats
 	@echo "$(GREEN)Redis Information:$(NC)"
 	@$(DOCKER_COMPOSE) exec redis redis-cli INFO | grep -E "redis_version|used_memory_human|connected_clients|total_commands_processed"
 
-##@ Testing & Notebooks
-
-notebook: ## Start Jupyter notebook server
-	@echo "$(GREEN)Starting Jupyter notebook server...$(NC)"
-	@echo "Notebooks available at: http://localhost:8888"
-	@echo "Testing notebook: notebooks/api_testing.ipynb"
-	cd notebooks && poetry run jupyter notebook
-
-notebook-lab: ## Start Jupyter Lab server
-	@echo "$(GREEN)Starting Jupyter Lab server...$(NC)"
-	@echo "Lab available at: http://localhost:8888"
-	cd notebooks && poetry run jupyter lab
-
 ##@ API Management
 
 api-run: ## Run the FastAPI application

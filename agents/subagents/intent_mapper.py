@@ -6,9 +6,9 @@ from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from agents.prompts.intent_mapper_prompt import INTENT_MAPPER_PROMPT
+from agents.state import AMLCopilotState
 from tools import get_all_tools
-from .state import AMLCopilotState, IntentMapping
-from .prompts import INTENT_MAPPER_PROMPT
 from config.agent_config import AgentConfig
 from config.settings import settings
 
@@ -92,25 +92,7 @@ class IntentMappingAgent:
         # Create messages for function calling
         # Tools are automatically described via bind_tools()
         messages = [
-            SystemMessage(content=f"""You are an intent mapping agent for AML compliance.
-
-Analyze the user query and select appropriate tools to retrieve data.
-You can call multiple tools if needed to fully answer the query.
-
-The customer CIF number is: {cif_no}
-Always include this in tool arguments that require a cif_no parameter.
-
-Available feature groups:
-- basic: Customer identity, risk score, KYC status
-- transaction_features: Transaction counts, amounts, averages across time windows
-- risk_features: PEP status, sanctions, adverse media
-- behavioral_features: Account dormancy, velocity changes, deviations
-- network_features: Graph centrality, community, counterparties
-- knowledge_graph: PEP exposure, sanctions proximity
-
-If the query is too ambiguous (e.g., "show me the data", "check the customer"),
-respond with a message asking for clarification instead of calling tools.
-"""),
+            SystemMessage(content=INTENT_MAPPER_PROMPT.format(cif_no=cif_no)),
             HumanMessage(content=f"User query: {user_query}")
         ]
 
@@ -171,7 +153,7 @@ respond with a message asking for clarification instead of calling tools.
                 return {
                     "review_status": "needs_clarification",
                     "additional_query": clarification_message,
-                    "next_agent": "end",  # Return to user for clarification
+                    "next_agent": "end",  # Return to user for clarification/guidance
                     "current_step": "intent_needs_clarification",
                     "final_response": clarification_message,
                     "completed": False,

@@ -6,7 +6,7 @@ import logging
 from langchain.tools import BaseTool
 
 from tools import get_all_tools
-from .state import AMLCopilotState, DataRetrievalResult
+from ..state import AMLCopilotState, DataRetrievalResult
 from config.agent_config import AgentConfig
 
 

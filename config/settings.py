@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     redis_db_cache: int = 0  # For data caching
     redis_db_checkpoints: int = 1  # For LangGraph state persistence
     redis_password: Optional[str] = None
+    enable_redis_checkpointing: bool = True  # Enable state persistence across sessions
 
     # LLM settings
     openai_api_key: str
@@ -81,6 +82,13 @@ class Settings(BaseSettings):
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+    
+    @property
+    def checkpoint_redis_url(self) -> str:
+        """Construct Redis connection URL for checkpoints."""
+        if self.redis_password:
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db_checkpoints}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db_checkpoints}"
     
     def get_agents_config(self):
         """Build agents configuration from settings.

@@ -6,8 +6,8 @@ from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from .state import AMLCopilotState
-from .prompts import COORDINATOR_PROMPT
+from agents.prompts.coordinator_prompt import COORDINATOR_PROMPT
+from agents.state import AMLCopilotState
 from config.agent_config import AgentConfig
 from config.settings import settings
 

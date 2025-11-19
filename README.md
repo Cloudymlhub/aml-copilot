@@ -146,68 +146,111 @@ Redis caching at feature group granularity instead of full customer or individua
 
 - Python 3.11+
 - Poetry
-- PostgreSQL (running)
-- Redis (running)
-- OpenAI API key (or compatible LLM endpoint)
+- Docker & Docker Compose
+- OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
 
-## Installation
+## Quick Start
 
-1. Install dependencies:
 ```bash
-poetry install
-```
+# 1. Install dependencies
+make install
 
-2. Configure environment variables:
-```bash
+# 2. Configure environment
 cp .env.example .env
-# Edit .env with your database credentials and API keys
+# Edit .env and set: OPENAI_API_KEY=your-key-here
+
+# 3. Start services (PostgreSQL + Redis)
+make services-start
+
+# 4. Setup database
+make db-migrate
+make db-seed
+
+# 5. Run the API
+make api-run
+
+# 6. Test (in another terminal)
+make notebook
+# Or visit: http://localhost:8000/docs
 ```
-
-3. Initialize database with mock data:
-```bash
-poetry run python data/mock_data.py
-```
-
-## Usage
-
-### Start the Streamlit UI
-
-```bash
-poetry run streamlit run ui/streamlit_app.py
-```
-
-### Example Queries
-
-- "Show me all transactions for customer ID 12345 in the last 7 days"
-- "What are the high-risk transactions above $50,000?"
-- "Generate a compliance report for account X"
-- "What typologies are associated with this alert?"
 
 ## Configuration
 
-Edit `config/settings.py` or use environment variables:
+### Environment Variables
 
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection string (or separate `REDIS_CACHE_URL` and `REDIS_CHECKPOINT_URL`)
-- `OPENAI_API_KEY` - OpenAI API key
-- `LLM_MODEL` - Model to use (default: gpt-4)
-- `MAX_REVIEW_ATTEMPTS` - Maximum review cycles before flagging for human review (default: 3)
+Create `.env` from template:
+```bash
+cp .env.example .env
+```
 
-### Agent-Specific Configuration
+**Required:**
+```env
+OPENAI_API_KEY=sk-proj-your-key-here
+```
 
-Each agent can have custom LLM settings via `AgentConfig`:
-- `model` - Override default LLM model per agent
-- `temperature` - Control randomness (0.0-1.0)
-- `max_tokens` - Response length limit
+**Database (auto-configured via Docker):**
+```env
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+DATABASE_NAME=aml_compliance
+DATABASE_USER=postgres
+DATABASE_PASSWORD=postgres
+```
 
-See [AGENT_FLOW.md](AGENT_FLOW.md) for architecture details.
+**Redis (auto-configured via Docker):**
+```env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB_CACHE=0          # For feature caching
+REDIS_DB_CHECKPOINTS=1    # For conversation history
+```
+
+### Agent Configuration
+
+Each agent can be configured independently:
+
+**Model Selection:**
+- **Coordinator**: `gpt-4o-mini` (routing decisions)
+- **Intent Mapper**: `gpt-4o-mini` (query understanding)
+- **Compliance Expert**: `gpt-4o` (deep AML analysis)
+- **Review Agent**: `gpt-4o` (quality assurance)
+
+**Temperature Settings:**
+- `0.0` = Deterministic (routing, mapping)
+- `0.1` = Slight creativity (analysis, review)
+
+**Review System:**
+```env
+MAX_REVIEW_ATTEMPTS=3  # Adaptive review cycles (1-5)
+```
+
+See `config/settings.py` for full configuration options.
 
 ## Development
 
-Run tests:
+**Common Commands:**
 ```bash
-poetry run pytest
+make install          # Install dependencies
+make setup            # Full setup (services + database)
+make start            # Start services + API
+make stop             # Stop everything
+make status           # Check service status
+
+make api-run          # Run API server
+make notebook         # Open Jupyter notebooks
+
+make db-migrate       # Run migrations
+make db-seed          # Load mock data
+make db-refresh       # Reset and reload database
+
+make test             # Run tests
+make format           # Format code
+make lint             # Check code quality
+
+make help             # Show all commands
 ```
+
+See `Makefile` for complete command reference.
 
 ## Features
 
@@ -222,11 +265,11 @@ poetry run pytest
 - LLM-generated guidance messages for query refinement
 - Audit trail logging
 
-## Architecture Documentation
+## Documentation
 
-- **[AGENT_FLOW.md](AGENT_FLOW.md)** - Comprehensive agent workflow, routing logic, and review system
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture and design patterns
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture, agent workflow, and design patterns
 - **[objective.md](objective.md)** - Project vision and roadmap
+- **Makefile** - Complete command reference with inline documentation
 
 ## License
 

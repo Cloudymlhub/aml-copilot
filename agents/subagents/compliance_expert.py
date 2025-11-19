@@ -6,8 +6,8 @@ from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from .state import AMLCopilotState, ComplianceAnalysis
-from .prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
+from ..state import AMLCopilotState, ComplianceAnalysis
+from ..prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
 from config.agent_config import AgentConfig
 from config.settings import settings
 

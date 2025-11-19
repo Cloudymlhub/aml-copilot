@@ -1,15 +1,16 @@
 """LangGraph workflow for AML Copilot multi-agent system."""
 
-from datetime import datetime
-from typing import Dict, Any, Optional, List
+from typing import Optional
 from langgraph.graph import StateGraph, END
 
 from .state import AMLCopilotState
-from .coordinator import create_coordinator_node
-from .intent_mapper import create_intent_mapper_node
-from .data_retrieval import create_data_retrieval_node
-from .compliance_expert import create_compliance_expert_node
-from .review_agent import create_review_agent_node
+from .subagents import (
+    create_coordinator_node,
+    create_intent_mapper_node,
+    create_data_retrieval_node,
+    create_compliance_expert_node,
+    create_review_agent_node,
+)
 from config.agent_config import AgentsConfig
 from config.settings import settings
 
@@ -145,8 +146,15 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         }
     )
 
-    # Intent mapper always goes to data retrieval
-    workflow.add_edge("intent_mapper", "data_retrieval")
+    # Intent mapper routes to data retrieval or can end early
+    workflow.add_conditional_edges(
+        "intent_mapper",
+        lambda state: END if state.get("next_agent") == "end" else "data_retrieval",
+        {
+            "data_retrieval": "data_retrieval",
+            END: END
+        }
+    )
 
     # Data retrieval routes to compliance expert or END
     workflow.add_conditional_edges(
@@ -182,293 +190,3 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
-class AMLCopilot:
-    """AML Copilot multi-agent system."""
-
-    def __init__(self, agents_config: AgentsConfig, enable_checkpointing: bool = False):
-        """Initialize AML Copilot with agent configurations.
-
-        Args:
-            agents_config: Configuration for all agents
-            enable_checkpointing: Enable Redis checkpointing (requires RedisJSON module)
-        """
-        from config.settings import settings
-
-        # Store config
-        self.config = agents_config
-
-        # Create RedisSaver checkpointer for chat continuity (optional)
-        # NOTE: RedisSaver requires Redis with RedisJSON module installed
-        # To enable: docker run -p 6379:6379 redis/redis-stack-server:latest
-        self.checkpointer = None
-        if enable_checkpointing:
-            try:
-                from langgraph.checkpoint.redis import RedisSaver
-
-                # Create Redis URL for checkpoints database
-                checkpoint_redis_url = f"redis://{settings.redis_host}:{settings.redis_port}/{settings.redis_db_checkpoints}"
-
-                # Create RedisSaver with the connection string
-                self.checkpointer = RedisSaver(checkpoint_redis_url)
-                print("✓ Redis checkpointing enabled")
-            except Exception as e:
-                print(f"⚠️  Checkpointing disabled: {e}")
-                print("   Conversation history will not persist across sessions")
-                self.checkpointer = None
-
-        # Create graph with config and optional checkpointer
-        self.graph = create_aml_copilot_graph(
-            agents_config=agents_config,
-            checkpointer=self.checkpointer
-        )
-
-    def query(
-        self,
-        user_query: str,
-        context: Optional[Dict[str, Any]] = None,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Process a user query through the multi-agent system with session continuation.
-
-        Args:
-            user_query: User's natural language query
-            context: Optional context (cif_no, alert_id, etc.) - will be required in Phase 2
-            session_id: Session ID for conversation tracking
-            user_id: User ID for conversation tracking
-
-        Returns:
-            Final response with analysis
-        """
-        # Create thread_id for Redis checkpointer
-        if self.checkpointer and user_id and session_id:
-            thread_id = f"{user_id}_{session_id}"
-            config = {"configurable": {"thread_id": thread_id}}
-        else:
-            config = None
-
-        # Load previous state from checkpoint if available
-        previous_state = None
-        if config:
-            try:
-                checkpoint = self.graph.get_state(config)
-                if checkpoint and checkpoint.values:
-                    previous_state = checkpoint.values
-            except Exception as e:
-                # If checkpoint doesn't exist yet, that's fine - new session
-                pass
-
-        # Build new user message
-        new_message = {
-            "role": "user",
-            "content": user_query,
-            "timestamp": datetime.now().isoformat()
-        }
-
-        # Initialize state
-        if previous_state:
-            # Continue existing conversation
-            initial_state: AMLCopilotState = {
-                "messages": previous_state.get("messages", []) + [new_message],
-                "user_query": user_query,
-                "context": context or previous_state.get("context", {}),  # Use provided context or preserve previous
-                "next_agent": "coordinator",  # Always restart from coordinator
-                "current_step": "initialized",
-                "intent": None,  # Clear intent for new query
-                "retrieved_data": None,  # Clear retrieved data for new query
-                "compliance_analysis": None,  # Clear analysis for new query
-                "final_response": None,
-                "review_status": None,  # Clear review status
-                "review_feedback": None,
-                "additional_query": None,
-                "review_agent_id": None,
-                "review_attempts": 0,
-                "session_id": session_id or previous_state.get("session_id", f"session_{datetime.now().timestamp()}"),
-                "started_at": previous_state.get("started_at", datetime.now().isoformat()),  # Preserve original session start
-                "completed": False
-            }
-        else:
-            # New conversation
-            initial_state: AMLCopilotState = {
-                "messages": [new_message],
-                "user_query": user_query,
-                "context": context or {},
-                "next_agent": "coordinator",
-                "current_step": "initialized",
-                "intent": None,
-                "retrieved_data": None,
-                "compliance_analysis": None,
-                "final_response": None,
-                "review_status": None,
-                "review_feedback": None,
-                "additional_query": None,
-                "review_agent_id": None,
-                "review_attempts": 0,
-                "session_id": session_id or f"session_{datetime.now().timestamp()}",
-                "started_at": datetime.now().isoformat(),
-                "completed": False
-            }
-
-        # Run the graph with checkpointing (if available)
-        if config:
-            final_state = self.graph.invoke(initial_state, config=config)
-        else:
-            final_state = self.graph.invoke(initial_state)
-
-        return {
-            "response": final_state.get("final_response", "Unable to process query"),
-            "compliance_analysis": final_state.get("compliance_analysis"),
-            "retrieved_data": final_state.get("retrieved_data"),
-            "messages": final_state.get("messages", []),
-            "session_id": final_state.get("session_id"),
-        }
-
-    async def aquery(self, user_query: str, session_id: str = None) -> Dict[str, Any]:
-        """Async version of query method.
-
-        Args:
-            user_query: User's natural language query
-            session_id: Optional session ID for tracking
-
-        Returns:
-            Final response with analysis
-        """
-        # Initialize state
-        initial_state: AMLCopilotState = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": user_query,
-                    "timestamp": datetime.now().isoformat()
-                }
-            ],
-            "user_query": user_query,
-            "next_agent": "coordinator",
-            "current_step": "initialized",
-            "intent": None,
-            "retrieved_data": None,
-            "compliance_analysis": None,
-            "final_response": None,
-            "session_id": session_id or f"session_{datetime.now().timestamp()}",
-            "started_at": datetime.now().isoformat(),
-            "completed": False
-        }
-
-        # Run the graph asynchronously
-        final_state = await self.graph.ainvoke(initial_state)
-
-        return {
-            "response": final_state.get("final_response", "Unable to process query"),
-            "compliance_analysis": final_state.get("compliance_analysis"),
-            "retrieved_data": final_state.get("retrieved_data"),
-            "messages": final_state.get("messages", []),
-            "session_id": final_state.get("session_id"),
-        }
-
-    def get_conversation_history(
-        self,
-        user_id: str,
-        session_id: str
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Get conversation history for a session.
-
-        Args:
-            user_id: User ID
-            session_id: Session ID
-
-        Returns:
-            List of messages in the conversation, or None if session doesn't exist
-        """
-        if not self.checkpointer:
-            return None
-
-        thread_id = f"{user_id}_{session_id}"
-        config = {"configurable": {"thread_id": thread_id}}
-
-        try:
-            checkpoint = self.graph.get_state(config)
-            if checkpoint and checkpoint.values:
-                return checkpoint.values.get("messages", [])
-        except Exception:
-            pass
-
-        return None
-
-    def clear_session(
-        self,
-        user_id: str,
-        session_id: str
-    ) -> bool:
-        """Clear/delete a session from checkpoint storage.
-
-        Args:
-            user_id: User ID
-            session_id: Session ID
-
-        Returns:
-            True if session was cleared, False otherwise
-        """
-        if not self.checkpointer:
-            return False
-
-        thread_id = f"{user_id}_{session_id}"
-
-        try:
-            # Delete from Redis using the checkpointer's connection
-            # RedisSaver stores checkpoints with a specific key pattern
-            import redis
-            from config.settings import settings
-
-            r = redis.Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db_checkpoints
-            )
-
-            # Delete all keys for this thread
-            pattern = f"*{thread_id}*"
-            keys = r.keys(pattern)
-            if keys:
-                r.delete(*keys)
-                return True
-        except Exception as e:
-            print(f"Error clearing session: {e}")
-
-        return False
-
-    def get_session_info(
-        self,
-        user_id: str,
-        session_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Get metadata about a session.
-
-        Args:
-            user_id: User ID
-            session_id: Session ID
-
-        Returns:
-            Dictionary with session metadata (started_at, message_count, context)
-        """
-        if not self.checkpointer:
-            return None
-
-        thread_id = f"{user_id}_{session_id}"
-        config = {"configurable": {"thread_id": thread_id}}
-
-        try:
-            checkpoint = self.graph.get_state(config)
-            if checkpoint and checkpoint.values:
-                state = checkpoint.values
-                return {
-                    "session_id": session_id,
-                    "user_id": user_id,
-                    "started_at": state.get("started_at"),
-                    "message_count": len(state.get("messages", [])),
-                    "context": state.get("context", {}),
-                    "last_updated": checkpoint.metadata.get("ts") if checkpoint.metadata else None,
-                }
-        except Exception:
-            pass
-
-        return None
