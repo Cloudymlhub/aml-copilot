@@ -2,18 +2,18 @@
 
 import json
 import logging
-from typing import Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.intent_mapper_prompt import INTENT_MAPPER_PROMPT
-from agents.state import AMLCopilotState
+from agents.state import AMLCopilotState, IntentMapping, AgentResponse
+from agents.base_agent import BaseAgent
 from tools import get_all_tools
 from config.agent_config import AgentConfig
 from config.settings import settings
 
 
-class IntentMappingAgent:
+class IntentMappingAgent(BaseAgent):
     """Intent mapping agent that converts natural language to structured queries.
 
     Uses OpenAI function calling (bind_tools) to ensure schema-aware tool selection.
@@ -24,15 +24,19 @@ class IntentMappingAgent:
     - Executor: Data Retrieval Agent - executes the selected tools
 
     This maintains clean separation between planning and execution.
+    
+    Message History: Last 10 messages (limit=10)
+    Rationale: Needs to resolve pronoun references ("their", "that customer") and
+               understand recent conversation flow, but doesn't need full history.
     """
 
     def __init__(self, config: AgentConfig):
         """Initialize intent mapping agent.
 
         Args:
-            config: Agent configuration with model settings
+            config: Agent configuration with model settings and history limit
         """
-        self.config = config
+        super().__init__(config)  # Initialize BaseAgent
         self.llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
@@ -40,7 +44,6 @@ class IntentMappingAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
-        self.logger = logging.getLogger(__name__)
 
         # Load all available tools from registry
         self.available_tools = get_all_tools()
@@ -50,7 +53,7 @@ class IntentMappingAgent:
         # Note: This does NOT execute tools, only enables the LLM to see their schemas
         self.llm_with_tools = self.llm.bind_tools(self.available_tools)
 
-    def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
+    def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Map user query to structured intent using function calling.
 
         Uses OpenAI function calling to select tools with schema validation.
@@ -60,9 +63,10 @@ class IntentMappingAgent:
             state: Current state
 
         Returns:
-            Updated state with intent mapping
+            AgentResponse with intent mapping
         """
-        self.logger.info("IntentMapper: invoked for session=%s", state.get("session_id"))
+        self.log_agent_start(state)
+        
         # Check if this is a replanning request from Review Agent
         additional_query = state.get("additional_query")
         if additional_query:
@@ -70,30 +74,25 @@ class IntentMappingAgent:
             user_query = additional_query
         else:
             user_query = state["user_query"]
+        
+        # Get formatted conversation history for reference resolution (last 10 messages)
+        history_context = self.get_conversation_history(state, formatted=True)
 
         # Get CIF from context (required for all queries)
         context = state.get("context", {})
         cif_no = context.get("cif_no")
 
         if not cif_no:
-            return {
-                "intent": None,
-                "next_agent": "end",
-                "error": "Missing cif_no in context",
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": "[Intent Mapper] Error: No customer ID provided in context",
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
-            }
-
-        # Create messages for function calling
+            raise ValueError("Missing cif_no in context")
+        
+        # Create messages for function calling with conversation history
         # Tools are automatically described via bind_tools()
+        # Include history to help resolve references like "their", "that customer", etc.
+        human_content = f"{history_context}\n\nUser query: {user_query}" if history_context else f"User query: {user_query}"
+        
         messages = [
             SystemMessage(content=INTENT_MAPPER_PROMPT.format(cif_no=cif_no)),
-            HumanMessage(content=f"User query: {user_query}")
+            HumanMessage(content=human_content)
         ]
 
         try:
@@ -137,18 +136,15 @@ class IntentMappingAgent:
                     "next_agent": "data_retrieval",
                     "current_step": "intent_mapped",
                     "additional_query": None,  # Clear additional_query after processing
-                    "messages": state["messages"] + [
-                        {
-                            "role": "assistant",
-                            "content": f"[Intent Mapper] Selected {len(tools_to_use)} tool(s): {[t['tool'] for t in tools_to_use]}",
-                            "timestamp": str(state.get("started_at", ""))
-                        }
-                    ]
+                    "messages": self._append_message(
+                        state,
+                        f"[Intent Mapper] Selected {len(tools_to_use)} tool(s): {[t['tool'] for t in tools_to_use]}"
+                    )
                 }
 
             else:
                 # No tool calls - LLM responded with text (likely asking for clarification)
-                clarification_message = response.content or "Could you please provide more specific details about your request?"
+                clarification_message = response.content if isinstance(response.content, str) else "Could you please provide more specific details about your request?"
 
                 return {
                     "review_status": "needs_clarification",
@@ -157,13 +153,7 @@ class IntentMappingAgent:
                     "current_step": "intent_needs_clarification",
                     "final_response": clarification_message,
                     "completed": False,
-                    "messages": state["messages"] + [
-                        {
-                            "role": "assistant",
-                            "content": clarification_message,
-                            "timestamp": str(state.get("started_at", ""))
-                        }
-                    ]
+                    "messages": self._append_message(state, clarification_message)
                 }
 
         except Exception as e:
@@ -181,13 +171,10 @@ class IntentMappingAgent:
                 "next_agent": "data_retrieval",
                 "current_step": "intent_mapped",
                 "additional_query": None,  # Clear additional_query after processing
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": f"[Intent Mapper] Using fallback intent due to error: {str(e)}",
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(
+                    state,
+                    f"[Intent Mapper] Using fallback intent due to error: {str(e)}"
+                )
             }
 
     def _infer_feature_groups(self, tools_to_use: list) -> list:

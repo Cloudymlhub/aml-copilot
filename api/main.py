@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def create_checkpointer(redis_url: str) -> Optional[any]:
+def create_checkpointer(redis_url: str) -> Optional[Any]:
     """Factory function to create a Redis checkpointer.
 
     Args:

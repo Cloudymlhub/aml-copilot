@@ -231,3 +231,74 @@ class AlertRepository:
             )
             result = cur.fetchone()
             return result[0] if result else 0
+
+    def get_open_alerts_by_cif(
+        self, conn: PGConnection, cif_no: str, limit: int = 50
+    ) -> List[AlertModel]:
+        """Get open alerts for a customer by CIF number.
+
+        Retrieves alerts with status 'open' or 'investigating' for the specified customer.
+        This is useful for autonomous alert review workflows where analysts work with CIF numbers.
+
+        Args:
+            conn: Database connection
+            cif_no: Customer CIF number (string identifier)
+            limit: Maximum number of alerts to return (default: 50)
+
+        Returns:
+            List of AlertModel objects ordered by severity and date
+        """
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT a.*
+                FROM alerts a
+                JOIN customers c ON a.customer_id = c.id
+                WHERE c.cif_no = %s
+                  AND a.status IN ('open', 'investigating')
+                ORDER BY
+                  CASE a.severity
+                    WHEN 'critical' THEN 1
+                    WHEN 'high' THEN 2
+                    WHEN 'medium' THEN 3
+                    WHEN 'low' THEN 4
+                    ELSE 5
+                  END,
+                  a.alert_date DESC
+                LIMIT %s
+                """,
+                (cif_no, limit)
+            )
+            rows = cur.fetchall()
+            return [AlertModel(**row) for row in rows]
+
+    def get_all_alerts_by_cif(
+        self, conn: PGConnection, cif_no: str, limit: int = 100
+    ) -> List[AlertModel]:
+        """Get all alerts for a customer by CIF number (regardless of status).
+
+        Retrieves complete alert history for the specified customer. Useful for
+        understanding alert patterns and investigation history.
+
+        Args:
+            conn: Database connection
+            cif_no: Customer CIF number (string identifier)
+            limit: Maximum number of alerts to return (default: 100)
+
+        Returns:
+            List of AlertModel objects ordered by date (most recent first)
+        """
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT a.*
+                FROM alerts a
+                JOIN customers c ON a.customer_id = c.id
+                WHERE c.cif_no = %s
+                ORDER BY a.alert_date DESC
+                LIMIT %s
+                """,
+                (cif_no, limit)
+            )
+            rows = cur.fetchall()
+            return [AlertModel(**row) for row in rows]

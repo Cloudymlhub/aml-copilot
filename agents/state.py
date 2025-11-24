@@ -77,3 +77,128 @@ class AMLCopilotState(TypedDict):
     session_id: str
     started_at: str
     completed: bool
+
+
+# ============================================================================
+# Agent Response Types
+# ============================================================================
+
+class AgentResponse(TypedDict, total=False):
+    """Standardized return type for agent __call__ methods.
+    
+    Agents return a dictionary that LangGraph merges into the global state.
+    This TypedDict defines the allowed fields agents can update.
+    
+    Design rationale:
+    - Type safety: Ensures agents only update valid state fields
+    - Documentation: Clear contract for what agents can return
+    - IDE support: Auto-completion for return values
+    - Validation: Can catch errors at development time
+    
+    Usage:
+        def __call__(self, state: AMLCopilotState) -> AgentResponse:
+            return {
+                "next_agent": "data_retrieval",
+                "intent": intent_mapping,
+                "messages": updated_messages
+            }
+    
+    Note: total=False means all fields are optional - agents only
+    return the fields they want to update.
+    """
+    # Routing
+    next_agent: str
+    current_step: str
+    
+    # Conversation
+    messages: List[Message]
+    user_query: str
+    
+    # Context
+    context: Dict[str, Any]
+    
+    # Intent Mapping
+    intent: Optional[IntentMapping]
+    
+    # Data Retrieval
+    retrieved_data: Optional[DataRetrievalResult]
+    
+    # Compliance Analysis
+    compliance_analysis: Optional[ComplianceAnalysis]
+    
+    # Final Response
+    final_response: Optional[str]
+    
+    # Review System
+    review_status: Optional[Literal["passed", "needs_data", "needs_refinement", "needs_clarification", "human_review"]]
+    review_feedback: Optional[str]
+    additional_query: Optional[str]
+    review_agent_id: Optional[str]
+    review_attempts: Optional[int]
+    
+    # Metadata
+    completed: bool
+    
+    # Error handling
+    error: Optional[str]
+
+
+# ============================================================================
+# Message Access Control
+# ============================================================================
+
+def get_conversation_context(
+    state: AMLCopilotState, 
+    message_history_limit: Optional[int]
+) -> List[Message]:
+    """Extract conversation messages based on history limit.
+    
+    Implements intuitive access control pattern:
+    - None: ALL messages (no limit)
+    - 0: NO messages (empty list)
+    - N > 0: Last N messages
+    
+    This function centralizes message slicing logic to ensure consistency
+    across agents. Each agent declares its needs via config, and this
+    function enforces the limit.
+    
+    Args:
+        state: Current AML Copilot state
+        message_history_limit: How many messages to return
+            - None: Return all messages (comprehensive analysis)
+            - 0: Return empty list (pure executors)
+            - N: Return last N messages (contextual awareness)
+        
+    Returns:
+        Filtered list of messages according to limit
+        
+    Examples:
+        >>> # Compliance Expert: needs ALL messages
+        >>> messages = get_conversation_context(state, None)
+        >>> 
+        >>> # Data Retrieval: needs NO messages (pure executor)
+        >>> messages = get_conversation_context(state, 0)
+        >>> 
+        >>> # Coordinator: needs last 3 messages (basic continuity)
+        >>> messages = get_conversation_context(state, 3)
+        >>> 
+        >>> # Intent Mapper: needs last 10 messages (reference resolution)
+        >>> messages = get_conversation_context(state, 10)
+    """
+    all_messages = state.get("messages", [])
+    
+    # None means ALL messages
+    if message_history_limit is None:
+        return all_messages
+    
+    # 0 means NO messages
+    if message_history_limit == 0:
+        return []
+    
+    # N means last N messages (or all if fewer than N)
+    if message_history_limit > 0:
+        return all_messages[-message_history_limit:] if len(all_messages) > message_history_limit else all_messages
+    
+    # Negative numbers: treat as 0 (defensive)
+    return []
+

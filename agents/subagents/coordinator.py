@@ -2,26 +2,32 @@
 
 import json
 import logging
-from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.coordinator_prompt import COORDINATOR_PROMPT
-from agents.state import AMLCopilotState
+from agents.state import AMLCopilotState, AgentResponse
+from agents.base_agent import BaseAgent
 from config.agent_config import AgentConfig
 from config.settings import settings
 
 
-class CoordinatorAgent:
-    """Coordinator agent that routes queries to specialized agents."""
+class CoordinatorAgent(BaseAgent):
+    """Coordinator agent that routes queries to specialized agents.
+    
+    Message History: Last 3 messages (limit=3)
+    Rationale: Needs basic continuity detection for follow-up queries
+               like "show me more" or "what about...", but doesn't need
+               deep conversation context for routing decisions.
+    """
 
     def __init__(self, config: AgentConfig):
         """Initialize coordinator agent.
 
         Args:
-            config: Agent configuration with model settings
+            config: Agent configuration with model settings and history limit
         """
-        self.config = config
+        super().__init__(config)  # Initialize BaseAgent
         self.llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
@@ -29,24 +35,29 @@ class CoordinatorAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
-        self.logger = logging.getLogger(__name__)
 
-    def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
+    def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Route the query to appropriate agent.
 
         Args:
             state: Current state
 
         Returns:
-            Updated state with routing decision
+            AgentResponse with routing decision
         """
+        self.log_agent_start(state)
+        
         user_query = state["user_query"]
-        self.logger.info("Coordinator: invoked for session=%s", state.get("session_id"))
+        history_context = self.get_conversation_history(state, formatted=True)  # Get formatted string
 
         def _build_messages(invalid: bool = False):
-            """Construct system/human messages with optional retry notice."""
+            """Construct system/human messages with optional retry notice and conversation context."""
             human_prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
-            human_content = f"{human_prefix}User query: {user_query}"
+            
+            # Include conversation history if available (for continuity detection)
+            context_section = f"\n\n{history_context}\n" if history_context else ""
+            
+            human_content = f"{human_prefix}{context_section}User query: {user_query}"
             return [
                 SystemMessage(content=COORDINATOR_PROMPT),
                 HumanMessage(content=human_content)
@@ -84,13 +95,7 @@ class CoordinatorAgent:
                     "current_step": "out_of_scope" if in_scope == False else "needs_refinement",
                     "completed": True,
                     "final_response": guidance_msg,
-                    "messages": state["messages"] + [
-                        {
-                            "role": "assistant",
-                            "content": guidance_msg,
-                            "timestamp": str(state.get("started_at", ""))
-                        }
-                    ]
+                    "messages": self._append_message(state, guidance_msg)
                 }
 
             # In-scope query: normal routing
@@ -102,26 +107,20 @@ class CoordinatorAgent:
             return {
                 "next_agent": next_agent,
                 "current_step": "coordinator_complete",
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": f"[Coordinator] Query type: {query_type}. Routing to: {next_agent}. Reason: {reasoning}",
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(
+                    state, 
+                    f"[Coordinator] Query type: {query_type}. Routing to: {next_agent}. Reason: {reasoning}"
+                )
             }
         except json.JSONDecodeError:
             # Fallback routing
             return {
                 "next_agent": "intent_mapper",
                 "current_step": "coordinator_complete",
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": "[Coordinator] Using default routing to intent_mapper",
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(
+                    state,
+                    "[Coordinator] Using default routing to intent_mapper"
+                )
             }
 
 

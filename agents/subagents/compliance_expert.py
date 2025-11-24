@@ -2,26 +2,32 @@
 
 import json
 import logging
-from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..state import AMLCopilotState, ComplianceAnalysis
-from ..prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
+from agents.state import AMLCopilotState, ComplianceAnalysis, AgentResponse
+from agents.base_agent import BaseAgent
+from agents.prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
 from config.agent_config import AgentConfig
 from config.settings import settings
 
 
-class ComplianceExpertAgent:
-    """Compliance expert agent that interprets data and provides AML guidance."""
+class ComplianceExpertAgent(BaseAgent):
+    """Compliance expert agent that interprets data and provides AML guidance.
+    
+    Message History: ALL messages (limit=None)
+    Rationale: Needs comprehensive conversation context for thorough compliance
+               analysis. Must understand full investigation flow, previous findings,
+               and user's complete line of inquiry.
+    """
 
     def __init__(self, config: AgentConfig):
         """Initialize compliance expert agent.
 
         Args:
-            config: Agent configuration with model settings
+            config: Agent configuration with model settings and history limit
         """
-        self.config = config
+        super().__init__(config)  # Initialize BaseAgent
         self.llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
@@ -29,22 +35,25 @@ class ComplianceExpertAgent:
             timeout=config.timeout,
             api_key=settings.openai_api_key,
         )
-        self.logger = logging.getLogger(__name__)
 
 
-    def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
+    def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Provide compliance expertise and analysis.
 
         Args:
             state: Current state
 
         Returns:
-            Updated state with compliance analysis and final response
+            AgentResponse with compliance analysis and final response
         """
-        self.logger.info("ComplianceExpert: invoked for session=%s", state.get("session_id"))
+        self.log_agent_start(state)
+        
         user_query = state["user_query"]
         retrieved_data = state.get("retrieved_data")
         intent_payload = state.get("intent", {})
+        
+        # Get formatted conversation history for comprehensive analysis (ALL messages)
+        history_context = self.get_conversation_history(state, formatted=True)
 
         # Format retrieved data for prompt
         if retrieved_data and retrieved_data.get("success"):
@@ -55,10 +64,15 @@ class ComplianceExpertAgent:
         intent_str = json.dumps(intent_payload, indent=2)
 
         def _build_analysis_messages(invalid: bool = False):
-            """Construct messages for compliance analysis, with optional retry notice."""
+            """Construct messages for compliance analysis, with conversation history and optional retry notice."""
             prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
+            
+            # Include full conversation history for comprehensive compliance analysis
+            context_section = f"{history_context}\n\n" if history_context else ""
+            
             human_content = (
-                f"{prefix}User query: {user_query}\n"
+                f"{prefix}{context_section}"
+                f"Current query: {user_query}\n"
                 f"Intent (if any): {intent_str}\n"
                 f"Retrieved data:\n{data_str}"
             )

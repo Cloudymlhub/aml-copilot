@@ -3,8 +3,18 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+class CustomBaseSettings(BaseSettings):
+    """Custom base settings to enable case-insensitive environment variable loading."""
 
-class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        populate_by_name=True,
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+class Settings(CustomBaseSettings):
     """Application settings loaded from environment variables."""
 
     # Database settings
@@ -17,7 +27,6 @@ class Settings(BaseSettings):
     # Redis settings
     redis_host: str = "localhost"
     redis_port: int = 6379
-    redis_db: int = 0  # Deprecated - use redis_db_cache or redis_db_checkpoints
     redis_db_cache: int = 0  # For data caching
     redis_db_checkpoints: int = 1  # For LangGraph state persistence
     redis_password: Optional[str] = None
@@ -51,6 +60,11 @@ class Settings(BaseSettings):
     # Review system settings
     max_review_attempts: int = 3  # Maximum number of review cycles before forcing completion
 
+    aml_alert_reviewer_model: str = "gpt-4o"  # Powerful model for alert review and SAR generation
+    aml_alert_reviewer_temperature: float = 0.0  # Deterministic for compliance decisions
+    aml_alert_reviewer_max_retries: int = 3
+    aml_alert_reviewer_timeout: int = 120  # Complex analysis needs time
+
     # Agent settings
     max_agent_iterations: int = 10
     agent_timeout: int = 300  # seconds
@@ -80,8 +94,8 @@ class Settings(BaseSettings):
     def redis_url(self) -> str:
         """Construct Redis connection URL."""
         if self.redis_password:
-            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
-        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+            return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db_cache}"
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db_cache}"
     
     @property
     def checkpoint_redis_url(self) -> str:
@@ -104,18 +118,28 @@ class Settings(BaseSettings):
                 temperature=self.coordinator_temperature,
                 max_retries=self.coordinator_max_retries,
                 timeout=self.coordinator_timeout,
+                message_history_limit=3,  # Last 3 messages - basic continuity detection
             ),
             intent_mapper=AgentConfig(
                 model_name=self.intent_mapper_model,
                 temperature=self.intent_mapper_temperature,
                 max_retries=self.intent_mapper_max_retries,
                 timeout=self.intent_mapper_timeout,
+                message_history_limit=10,  # Last 10 messages - reference resolution
+            ),
+            data_retrieval=AgentConfig(
+                model_name="gpt-4o-mini",  # Not used (pure executor)
+                temperature=0.0,
+                max_retries=3,
+                timeout=60,
+                message_history_limit=0,  # NO history - pure executor
             ),
             compliance_expert=AgentConfig(
                 model_name=self.compliance_expert_model,
                 temperature=self.compliance_expert_temperature,
                 max_retries=self.compliance_expert_max_retries,
                 timeout=self.compliance_expert_timeout,
+                message_history_limit=None,  # ALL messages - comprehensive analysis
             ),
             review_expert=ReviewAgentConfig(
                 model_name=self.review_expert_model,  # Uses same model as review Expert
@@ -123,6 +147,14 @@ class Settings(BaseSettings):
                 max_retries=self.review_expert_max_retries,
                 timeout=self.review_expert_timeout,
                 max_review_attempts=self.max_review_attempts,
+                message_history_limit=None,  # ALL messages - quality assurance needs everything
+            ),
+            aml_alert_reviewer=AgentConfig(
+                model_name=self.aml_alert_reviewer_model,
+                temperature=self.aml_alert_reviewer_temperature,
+                max_retries=self.aml_alert_reviewer_max_retries,
+                timeout=self.aml_alert_reviewer_timeout,
+                message_history_limit=None,  # ALL messages - full investigation context needed
             ),
         )
 

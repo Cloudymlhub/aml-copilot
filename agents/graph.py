@@ -10,6 +10,7 @@ from .subagents import (
     create_data_retrieval_node,
     create_compliance_expert_node,
     create_review_agent_node,
+    create_aml_alert_reviewer_node,
 )
 from config.agent_config import AgentsConfig
 from config.settings import settings
@@ -28,6 +29,8 @@ def route_after_coordinator(state: AMLCopilotState) -> str:
 
     if next_agent == "end":
         return END
+    elif next_agent == "aml_alert_reviewer":
+        return "aml_alert_reviewer"
     elif next_agent == "compliance_expert":
         return "compliance_expert"
     else:
@@ -76,8 +79,9 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
           ↓
         coordinator (decides routing)
           ↓
-        ├─→ intent_mapper → data_retrieval → compliance_expert → END
-        └─→ compliance_expert → END
+        ├─→ intent_mapper → data_retrieval → compliance_expert → review_agent → END
+        ├─→ compliance_expert → review_agent → END
+        └─→ aml_alert_reviewer → END (for alert review/SAR generation)
 
     Returns:
         Compiled LangGraph CompiledStateGraph
@@ -88,9 +92,10 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     # Add nodes with configs
     workflow.add_node("coordinator", create_coordinator_node(agents_config.coordinator))
     workflow.add_node("intent_mapper", create_intent_mapper_node(agents_config.intent_mapper))
-    workflow.add_node("data_retrieval", create_data_retrieval_node())
+    workflow.add_node("data_retrieval", create_data_retrieval_node(agents_config.data_retrieval))
     workflow.add_node("compliance_expert", create_compliance_expert_node(agents_config.compliance_expert))
     workflow.add_node("review_agent", create_review_agent_node(agents_config.review_expert))
+    workflow.add_node("aml_alert_reviewer", create_aml_alert_reviewer_node(agents_config.aml_alert_reviewer))
 
     # Set entry point
     workflow.set_entry_point("coordinator")
@@ -142,6 +147,16 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         {
             "intent_mapper": "intent_mapper",
             "compliance_expert": "compliance_expert",
+            "aml_alert_reviewer": "aml_alert_reviewer",
+            END: END
+        }
+    )
+
+    # AML alert reviewer routes to END (operational work is self-contained)
+    workflow.add_conditional_edges(
+        "aml_alert_reviewer",
+        lambda state: END,
+        {
             END: END
         }
     )

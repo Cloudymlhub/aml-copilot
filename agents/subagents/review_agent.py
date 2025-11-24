@@ -2,27 +2,32 @@
 
 import json
 import logging
-from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..state import AMLCopilotState
-from ..prompts import REVIEW_AGENT_PROMPT
-from config.agent_config import AgentConfig, ReviewAgentConfig
+from agents.state import AMLCopilotState, AgentResponse
+from agents.base_agent import BaseAgent
+from agents.prompts import REVIEW_AGENT_PROMPT
+from config.agent_config import ReviewAgentConfig
 from config.settings import settings
 
 
-class ReviewAgent:
-    """Dedicated QA agent that evaluates compliance expert outputs."""
+class ReviewAgent(BaseAgent):
+    """Dedicated QA agent that evaluates compliance expert outputs.
+    
+    Message History: ALL messages (limit=None)
+    Rationale: Quality assurance requires comprehensive context to properly
+               evaluate response quality, completeness, and consistency with
+               the full conversation and investigation flow.
+    """
 
     def __init__(self, config: ReviewAgentConfig):
         """Initialize review agent.
 
         Args:
-            config: Agent configuration with model settings
-            max_review_attempts: Maximum number of review cycles before forcing completion
+            config: Agent configuration with model settings and history limit
         """
-        self.config = config
+        super().__init__(config)  # Initialize BaseAgent
         self.llm = ChatOpenAI(
             model=config.model_name,
             temperature=config.temperature,
@@ -31,23 +36,26 @@ class ReviewAgent:
             api_key=settings.openai_api_key,
         )
         self.max_review_attempts = config.max_review_attempts
-        self.logger = logging.getLogger(__name__)
 
-    def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
+    def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Review compliance expert output and determine next steps.
 
         Args:
             state: Current state with compliance_analysis and final_response
 
         Returns:
-            Updated state with review results and routing decision
+            AgentResponse with review results and routing decision
         """
-        self.logger.info("ReviewAgent: invoked for session=%s attempt=%s", state.get("session_id"), state.get("review_attempts", 0))
+        self.log_agent_start(state)
+        
         user_query = state["user_query"]
         final_response = state.get("final_response", "")
         compliance_analysis = state.get("compliance_analysis", {})
         retrieved_data = state.get("retrieved_data", {})
         review_attempts = state.get("review_attempts", 0) or 0
+        
+        # Get full conversation history for comprehensive QA
+        history_context = self.get_conversation_history(state, formatted=True)
 
         # Check if we've exceeded max attempts
         if review_attempts >= self.max_review_attempts:
@@ -59,13 +67,7 @@ class ReviewAgent:
                 "next_agent": "end",
                 "current_step": "review_max_attempts",
                 "completed": True,
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": final_response,
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(state, final_response or "No response generated.")
             }
 
         # Format context for review
@@ -75,8 +77,13 @@ class ReviewAgent:
         def _build_messages(invalid: bool = False):
             """Construct system/human messages with optional retry notice."""
             prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
+            
+            # Include conversation history for comprehensive QA
+            history_section = f"{history_context}\n\n" if history_context else ""
+            
             human_content = (
-                f"{prefix}Original user query: {user_query}\n"
+                f"{prefix}{history_section}"
+                f"Original user query: {user_query}\n"
                 f"Generated response: {final_response}\n"
                 f"Compliance analysis (internal): {analysis_str}\n"
                 f"Retrieved data: {retrieved_data_str}"
@@ -121,13 +128,7 @@ class ReviewAgent:
                 "next_agent": "end",
                 "current_step": "review_passed",
                 "completed": True,
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": final_response,
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(state, final_response or "No response generated.")
             }
         elif review_status == "needs_data":
             return {
@@ -185,13 +186,7 @@ class ReviewAgent:
                 "next_agent": "end",
                 "current_step": "review_completed",
                 "completed": True,
-                "messages": state["messages"] + [
-                    {
-                        "role": "assistant",
-                        "content": final_response,
-                        "timestamp": str(state.get("started_at", ""))
-                    }
-                ]
+                "messages": self._append_message(state, final_response or "No response generated.")
             }
 
 

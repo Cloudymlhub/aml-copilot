@@ -1,28 +1,36 @@
 """Data Retrieval Agent - Executes data queries using tools."""
 
-from typing import Dict, Any, List
 import inspect
 import logging
+from typing import Dict, Any
+
 from langchain.tools import BaseTool
 
-from tools import get_all_tools
-from ..state import AMLCopilotState, DataRetrievalResult
+from agents.base_agent import BaseAgent
+from agents.state import AMLCopilotState, DataRetrievalResult, AgentResponse
 from config.agent_config import AgentConfig
+from tools import get_all_tools
 
 
-class DataRetrievalAgent:
-    """Data retrieval agent that executes queries using available tools."""
+class DataRetrievalAgent(BaseAgent):
+    """Data retrieval agent that executes queries using available tools.
+    
+    Message History: NONE (limit=0)
+    Rationale: Pure executor that doesn't use LLMs or need conversation context.
+               Simply executes tools based on intent mapper's structured output.
+    """
 
-    def __init__(self):
+    def __init__(self, config: AgentConfig):
         """Initialize data retrieval agent.
         
         Args:
-            config: Agent configuration (currently unused, reserved for future LLM-based retrieval)
+            config: Agent configuration (limit should be 0 for data retrieval)
         """
+        super().__init__(config)  # Initialize BaseAgent
+        
         # Load all tools
         self.tools = get_all_tools()
         self.tool_map = {tool.name: tool for tool in self.tools}
-        self.logger = logging.getLogger(__name__)
 
     def _execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a single tool with arguments.
@@ -48,26 +56,28 @@ class DataRetrievalAgent:
             self.logger.exception("DataRetrieval: tool %s failed", tool_name)
             return {"error": f"Tool execution failed: {str(e)}"}
 
-    def __call__(self, state: AMLCopilotState) -> Dict[str, Any]:
+    def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Execute data retrieval based on intent.
 
         Args:
             state: Current state
 
         Returns:
-            Updated state with retrieved data
+            AgentResponse with retrieved data and routing decision
         """
-        self.logger.info("DataRetrieval: invoked with session=%s", state.get("session_id"))
+        self.log_agent_start(state)
         intent = state.get("intent")
 
         if not intent:
+            retrieval_result: DataRetrievalResult = {
+                "success": False,
+                "data": {},
+                "tools_used": [],
+                "error": "No intent mapping found",
+                "errors": None
+            }
             return {
-                "retrieved_data": {
-                    "success": False,
-                    "data": {},
-                    "tools_used": [],
-                    "error": "No intent mapping found"
-                },
+                "retrieved_data": retrieval_result,
                 "next_agent": "compliance_expert",
                 "current_step": "data_retrieval_failed"
             }
@@ -75,13 +85,15 @@ class DataRetrievalAgent:
         tools_to_use = intent.get("tools_to_use", [])
 
         if not tools_to_use:
+            retrieval_result: DataRetrievalResult = {
+                "success": False,
+                "data": {},
+                "tools_used": [],
+                "error": "No tools specified in intent",
+                "errors": None
+            }
             return {
-                "retrieved_data": {
-                    "success": False,
-                    "data": {},
-                    "tools_used": [],
-                    "error": "No tools specified in intent"
-                },
+                "retrieved_data": retrieval_result,
                 "next_agent": "compliance_expert",
                 "current_step": "data_retrieval_failed"
             }
@@ -153,24 +165,21 @@ class DataRetrievalAgent:
             "retrieved_data": retrieval_result,
             "next_agent": next_agent,
             "current_step": "data_retrieved" if retrieval_result["success"] else "data_retrieval_partial",
-            "messages": state["messages"] + [
-                {
-                    "role": "assistant",
-                    "content": f"[Data Retrieval] Executed {len(tools_used)} tools. Success: {retrieval_result['success']}",
-                    "timestamp": str(state.get("started_at", ""))
-                }
-            ]
+            "messages": self._append_message(
+                state, 
+                f"[Data Retrieval] Executed {len(tools_used)} tools. Success: {retrieval_result['success']}"
+            )
         }
 
 
-def create_data_retrieval_node():
+def create_data_retrieval_node(config: AgentConfig):
     """Create data retrieval node for LangGraph.
 
     Args:
-        config: Agent configuration
+        config: Agent configuration (should have message_history_limit=0)
     
     Returns:
         Data retrieval agent callable
     """
-    agent = DataRetrievalAgent()
+    agent = DataRetrievalAgent(config)
     return agent

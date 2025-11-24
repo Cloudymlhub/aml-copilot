@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb  # Uncomment if you want to exclude all notebooks by default
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+poetry.lock  # Keep pyproject.toml but lock can be regenerated
+
+# Docker
+.docker/
+
+# Large data files
+data/
+*.csv
+*.parquet
+*.pkl
+*.pickle
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Claude workspace settings (these are personal)
+.claude/settings.local.json

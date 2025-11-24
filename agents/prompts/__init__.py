@@ -8,6 +8,11 @@ from .compliance_expert_prompt import (
     RESPONSE_SYNTHESIS_PROMPT
 )
 from .review_agent_prompt import REVIEW_AGENT_PROMPT, SELF_REVIEW_PROMPT
+from .aml_alert_reviewer_prompt import (
+    ALERT_REVIEW_PROMPT,
+    SAR_NARRATIVE_PROMPT,
+    TRANSACTION_PATTERN_ANALYSIS_PROMPT
+)
 
 __all__ = [
     "COORDINATOR_PROMPT",
@@ -17,4 +22,7 @@ __all__ = [
     "RESPONSE_SYNTHESIS_PROMPT",
     "REVIEW_AGENT_PROMPT",
     "SELF_REVIEW_PROMPT",
+    "ALERT_REVIEW_PROMPT",
+    "SAR_NARRATIVE_PROMPT",
+    "TRANSACTION_PATTERN_ANALYSIS_PROMPT",
 ]
