@@ -280,6 +280,48 @@ def main():
         print(f"Failed: {total_failed}")
         print(f"Errors: {total_errors}")
 
+        # Save results to JSON
+        results_dir = project_root / "tests" / "results"
+        results_dir.mkdir(exist_ok=True)
+
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        results = {
+            "timestamp": datetime.now().isoformat(),
+            "total": total,
+            "passed": total_passed,
+            "failed": total_failed,
+            "errors": total_errors,
+            "pass_rate": total_passed / total if total > 0 else 0.0,
+            "category_stats": {
+                "boundary_handling": {
+                    "total": sum(boundary_results),
+                    "passed": boundary_results[0],
+                    "failed": boundary_results[1],
+                    "errors": boundary_results[2]
+                },
+                "error_handling": {
+                    "total": sum(error_results),
+                    "passed": error_results[0],
+                    "failed": error_results[1],
+                    "errors": error_results[2]
+                }
+            }
+        }
+
+        # Save timestamped file
+        results_file = results_dir / f"system_tests_{timestamp_str}.json"
+        with open(results_file, 'w') as f:
+            json.dump(results, f, indent=2)
+
+        # Save as "latest"
+        latest_file = results_dir / "system_tests_latest.json"
+        with open(latest_file, 'w') as f:
+            json.dump(results, f, indent=2)
+
+        print(f"\n📊 Results saved to: {results_file}")
+        print(f"📊 Latest results: {latest_file}")
+
         if total_failed == 0 and total_errors == 0:
             print(f"\n✅ All system tests passed!")
             return 0

@@ -419,7 +419,8 @@ class AgentEvaluationRunner:
         dataset_path: Path,
         category: Optional[str] = None,
         priority: Optional[str] = None,
-        baseline_path: Optional[Path] = None
+        baseline_path: Optional[Path] = None,
+        save_results: bool = True
     ) -> EvaluationReport:
         """Run complete evaluation suite.
 
@@ -428,6 +429,7 @@ class AgentEvaluationRunner:
             category: Optional category filter
             priority: Optional priority filter
             baseline_path: Optional path to baseline snapshot for regression detection
+            save_results: Whether to automatically save results to JSON (default: True)
 
         Returns:
             EvaluationReport with complete results
@@ -457,6 +459,24 @@ class AgentEvaluationRunner:
 
         # Print report summary
         self._print_report_summary(report)
+
+        # Auto-save results (similar to conversation tests)
+        if save_results:
+            # Get project root
+            project_root = Path(__file__).parent.parent.parent
+            results_dir = project_root / "tests" / "results"
+            results_dir.mkdir(exist_ok=True)
+
+            # Save timestamped file
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            category_suffix = f"_{category}" if category else ""
+            results_file = results_dir / f"evaluation_tests_{timestamp_str}{category_suffix}.json"
+            self.save_report(report, results_file)
+
+            # Save as "latest" for easy access
+            latest_file = results_dir / f"evaluation_tests_latest{category_suffix}.json"
+            self.save_report(report, latest_file)
+            print(f"📊 Latest results: {latest_file}")
 
         return report
 

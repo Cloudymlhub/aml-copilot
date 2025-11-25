@@ -43,6 +43,17 @@ class ConversationTestResult:
     def __repr__(self):
         return f"<ConversationTestResult {self.test_id}: {self.status}>"
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to dictionary for JSON serialization."""
+        return {
+            "test_id": self.test_id,
+            "category": self.category,
+            "status": self.status,
+            "turn_results": self.turn_results,
+            "error_message": self.error_message,
+            # Note: final_state not included to keep report concise
+        }
+
 
 class ConversationTestRunner:
     """Runner for multi-turn conversation tests."""
@@ -386,13 +397,14 @@ class ConversationTestRunner:
         return True
 
     def run_test_suite(
-        self, fixture_path: Path, category_filter: str = None
+        self, fixture_path: Path, category_filter: str = None, save_results: bool = True
     ) -> Dict[str, Any]:
         """Run a suite of conversation tests.
 
         Args:
             fixture_path: Path to JSON fixture file
             category_filter: Optional category to filter tests
+            save_results: Whether to save results to JSON file (default: True)
 
         Returns:
             Summary report dict
@@ -417,13 +429,31 @@ class ConversationTestRunner:
         failed = sum(1 for r in results if r.status == "FAIL")
         errors = sum(1 for r in results if r.status == "ERROR")
 
+        # Calculate per-category stats
+        category_stats = {}
+        for result in results:
+            cat = result.category
+            if cat not in category_stats:
+                category_stats[cat] = {"total": 0, "passed": 0, "failed": 0, "errors": 0}
+            category_stats[cat]["total"] += 1
+            if result.status == "PASS":
+                category_stats[cat]["passed"] += 1
+            elif result.status == "FAIL":
+                category_stats[cat]["failed"] += 1
+            else:
+                category_stats[cat]["errors"] += 1
+
         summary = {
+            "timestamp": datetime.now().isoformat(),
+            "fixture_path": str(fixture_path),
+            "category_filter": category_filter,
             "total": total,
             "passed": passed,
             "failed": failed,
             "errors": errors,
             "pass_rate": passed / total if total > 0 else 0,
-            "results": results,
+            "category_stats": category_stats,
+            "results": [r.to_dict() for r in results],
         }
 
         # Print summary
@@ -434,7 +464,32 @@ class ConversationTestRunner:
         print(f"Passed: {passed} ({summary['pass_rate']:.1%})")
         print(f"Failed: {failed}")
         print(f"Errors: {errors}")
+        print(f"\nBy Category:")
+        for cat, stats in category_stats.items():
+            cat_pass_rate = stats["passed"] / stats["total"] if stats["total"] > 0 else 0
+            print(f"  {cat}: {stats['passed']}/{stats['total']} ({cat_pass_rate:.1%})")
         print(f"{'='*70}")
+
+        # Save results to JSON file
+        if save_results:
+            results_dir = project_root / "tests" / "results"
+            results_dir.mkdir(exist_ok=True)
+
+            # Generate filename with timestamp
+            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            category_suffix = f"_{category_filter}" if category_filter else ""
+            results_file = results_dir / f"conversation_tests_{timestamp_str}{category_suffix}.json"
+
+            with open(results_file, "w") as f:
+                json.dump(summary, f, indent=2)
+
+            print(f"\n📊 Results saved to: {results_file}")
+
+            # Also save as "latest" for easy access
+            latest_file = results_dir / f"conversation_tests_latest{category_suffix}.json"
+            with open(latest_file, "w") as f:
+                json.dump(summary, f, indent=2)
+            print(f"📊 Latest results: {latest_file}")
 
         return summary
 

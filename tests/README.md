@@ -6,12 +6,15 @@ Comprehensive testing infrastructure for the AML Copilot multi-agent system.
 
 ## 🎯 Overview
 
-The AML Copilot uses a **two-suite testing strategy**:
+The AML Copilot uses a **three-suite testing strategy**:
 
-1. **AML Knowledge Tests** (`evaluation/`) - Tests domain expertise and compliance analysis quality
-2. **System Behavior Tests** (`system/`) - Tests AI assistant capabilities (conversation, routing, errors)
+1. **Conversation Tests** (`system/test_conversations.py`) - Tests multi-turn behavior and data access patterns [✅ NEW!]
+2. **AML Knowledge Tests** (`evaluation/`) - Tests domain expertise and compliance analysis quality
+3. **System Behavior Tests** (`system/`) - Tests basic AI assistant capabilities (boundaries, errors)
 
-Both suites are essential for production readiness.
+All three suites are essential for production readiness.
+
+**📋 For a detailed comparison of test types and outputs, see [`TEST_TYPES_OVERVIEW.md`](./TEST_TYPES_OVERVIEW.md)**
 
 ---
 
@@ -113,16 +116,38 @@ PYTHONPATH=/path/to/aml_copilot python tests/system/run_system_tests.py
 
 **Target**: 50+ test cases covering all major typologies
 
-### Suite 2: System Behavior Tests
+### Suite 2: Conversation Tests ✅ NEW!
 
-**Purpose**: Validate AI assistant capabilities
+**Purpose**: Validate multi-turn conversation behavior and data access patterns
+
+**Categories**:
+- ✅ **Reference Resolution** (5 tests): Pronoun resolution ("their"), entity tracking
+- ✅ **Cross-Turn Data Access** (5 tests): Message history usage, data synthesis
+- ✅ **Context Accumulation** (3 tests): Progressive investigation without repetition
+
+**Key Validation**: "Is message history sufficient for cross-turn data synthesis?"
+
+**Output**: Automatic JSON reports
+- Location: `tests/results/`
+- Latest: `conversation_tests_latest.json`
+- Timestamped: `conversation_tests_YYYYMMDD_HHMMSS.json`
+
+**Run Tests**:
+```bash
+make test-conversations       # Run all conversation tests
+make test-results             # View latest results
+```
+
+**Current Results**: See `tests/results/conversation_tests_latest.json`
+
+### Suite 3: System Behavior Tests
+
+**Purpose**: Validate basic AI assistant capabilities
 
 **Categories**:
 - ✅ **Boundary Handling** (10 tests): Off-topic questions, in-scope questions
 - ✅ **Error Handling** (7 tests): Missing data, invalid inputs, graceful degradation
 - ✅ **Routing** (8 test fixtures): Coordinator routing decisions
-- ⚠️ **Conversation** (planned): Multi-turn conversations, context retention
-- ⚠️ **Intent Mapping** (planned): Entity extraction accuracy
 
 **Current Results**: 5/7 tests passed (71.4%)
 
@@ -310,9 +335,10 @@ if new_report.regressions_detected:
 ### ⚠️ In Progress
 
 - [ ] Golden dataset expansion (3/50 cases)
-- [ ] Multi-turn conversation tests
+- [x] Multi-turn conversation tests ✅
 - [ ] Routing test implementation
 - [ ] CI/CD integration
+- [ ] Notebook integration for conversation tests
 
 ### 📊 Test Results (Latest Run)
 

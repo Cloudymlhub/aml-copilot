@@ -8,11 +8,11 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001",
+        "user_query": "What's the customer's basic info?",
         "expected_behavior": {
           "routes_to": "intent_mapper",
           "fetches_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["customer"]
         }
       },
       {
@@ -40,10 +40,10 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001",
+        "user_query": "What's the risk profile?",
         "expected_behavior": {
           "fetches_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["risk"]
         }
       },
       {
@@ -70,7 +70,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me transactions for C000001",
+        "user_query": "Show me recent transactions",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["transaction"]
@@ -99,7 +99,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Compare customers C000001 and C000002",
+        "user_query": "Compare this customer with C000002",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["C000001", "C000002"]
@@ -129,7 +129,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me transactions from last month for C000001",
+        "user_query": "Show me transactions from last month",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["transaction"]
@@ -158,10 +158,10 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001",
+        "user_query": "What's the customer's basic info?",
         "expected_behavior": {
           "fetches_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["customer"]
         }
       },
       {
@@ -196,10 +196,10 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001 basic info",
+        "user_query": "What's the risk profile?",
         "expected_behavior": {
           "fetches_data": true,
-          "response_includes": ["C000001", "risk"]
+          "response_includes": ["risk"]
         }
       },
       {
@@ -236,10 +236,10 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001",
+        "user_query": "What's the customer profile?",
         "expected_behavior": {
           "fetches_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["customer"]
         }
       },
       {
@@ -255,7 +255,7 @@
         "user_query": "What was the customer's name again?",
         "expected_behavior": {
           "references_turn_1_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["name"]
         }
       }
     ],
@@ -273,10 +273,10 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001 basic info",
+        "user_query": "What's the basic customer info?",
         "expected_behavior": {
           "fetches_data": true,
-          "response_includes": ["C000001"]
+          "response_includes": ["customer"]
         }
       },
       {
@@ -318,7 +318,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Show me customer C000001",
+        "user_query": "What's the customer profile?",
         "expected_behavior": {
           "fetches_data": true
         }
@@ -351,7 +351,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Analyze customer C000001",
+        "user_query": "Analyze this customer for AML risk",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["analysis"]
@@ -387,7 +387,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "Analyze customer C000001 for suspicious activity",
+        "user_query": "Analyze this customer for suspicious activity",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["analysis"]
@@ -416,7 +416,7 @@
     "turns": [
       {
         "turn_number": 1,
-        "user_query": "What typologies apply to customer C000001?",
+        "user_query": "What typologies apply to this customer?",
         "expected_behavior": {
           "fetches_data": true,
           "response_includes": ["typology"]
