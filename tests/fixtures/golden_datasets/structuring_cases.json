@@ -1,0 +1,253 @@
+[
+  {
+    "test_id": "STRUCT_001",
+    "category": "structuring",
+    "priority": "HIGH",
+    "description": "Classic structuring - 6 transactions just below $10k threshold",
+    "input": {
+      "user_query": "Analyze the recent activity for customer C000123",
+      "context": {
+        "cif_no": "C000123",
+        "alert_id": "ALT_2024_001",
+        "investigation_id": "INV_2024_001"
+      },
+      "ml_output": {
+        "daily_risk_scores": [
+          {"date": "2024-01-15", "risk_score": 0.75},
+          {"date": "2024-01-16", "risk_score": 0.82},
+          {"date": "2024-01-17", "risk_score": 0.85},
+          {"date": "2024-01-18", "risk_score": 0.92}
+        ],
+        "feature_values": {
+          "txn_count_last_30d": 47,
+          "avg_txn_amount": 9850.50,
+          "txn_count_near_threshold": 6,
+          "cash_deposit_frequency": "daily",
+          "total_amount_30d": 59100.00,
+          "unique_branch_count": 3
+        },
+        "red_flag_scores": {
+          "transactions_below_threshold": 0.95,
+          "rapid_movement_of_funds": 0.23,
+          "cash_intensive_business": 0.67
+        },
+        "most_likely_typology": "structuring",
+        "typology_likelihoods": {
+          "structuring": 0.85,
+          "layering": 0.23
+        },
+        "typology_red_flags": {
+          "structuring": [
+            {
+              "red_flag": "transactions_below_threshold",
+              "score": 0.95,
+              "contributing_features": [
+                {"feature": "txn_count_near_threshold", "value": 6, "importance": 0.85},
+                {"feature": "avg_txn_amount", "value": 9850.50, "importance": 0.78}
+              ]
+            }
+          ]
+        }
+      },
+      "customer_data": {
+        "cif_no": "C000123",
+        "name": "John Doe",
+        "occupation": "Small business owner",
+        "risk_score": 87
+      }
+    },
+    "expected_output": {
+      "typologies_identified": ["structuring"],
+      "red_flags_identified": ["transactions_below_threshold"],
+      "risk_assessment": "HIGH",
+      "key_facts_mentioned": [
+        "6 transactions",
+        "$9,850",
+        "$10,000 threshold",
+        "$59,100",
+        "31 USC 5324",
+        "31 CFR 1020.320",
+        "$5,000 SAR threshold"
+      ],
+      "recommendations_include": [
+        "verify if transactions are related",
+        "review transaction locations",
+        "interview customer"
+      ],
+      "regulatory_citations": [
+        "31 USC 5324",
+        "31 CFR 1020.320"
+      ],
+      "should_not_include": [
+        "FILE_SAR",
+        "CLOSE",
+        "ESCALATE",
+        "January 15",
+        "$10,500"
+      ]
+    },
+    "evaluation_criteria": {
+      "must_identify_typology": true,
+      "must_identify_red_flags": true,
+      "must_cite_regulations": true,
+      "must_provide_recommendations": true,
+      "must_not_hallucinate": true,
+      "must_explain_attribution_chain": true,
+      "allow_additional_typologies": false,
+      "min_key_facts_coverage": 0.8
+    },
+    "created_by": "AML Compliance Expert",
+    "reviewed_by": "Senior AML Analyst",
+    "created_date": "2024-01-15",
+    "version": "1.0",
+    "tags": ["threshold_avoidance", "cash_deposits", "high_priority"]
+  },
+  {
+    "test_id": "STRUCT_002",
+    "category": "structuring",
+    "priority": "HIGH",
+    "description": "Smurfing - Multiple individuals conducting related transactions",
+    "input": {
+      "user_query": "What do you make of the activity pattern for C000456?",
+      "context": {
+        "cif_no": "C000456"
+      },
+      "ml_output": {
+        "daily_risk_scores": [
+          {"date": "2024-01-10", "risk_score": 0.68},
+          {"date": "2024-01-11", "risk_score": 0.72},
+          {"date": "2024-01-12", "risk_score": 0.79}
+        ],
+        "feature_values": {
+          "txn_count_near_threshold": 8,
+          "avg_txn_amount": 9750.00,
+          "unique_depositor_count": 4,
+          "same_day_deposits": 3,
+          "total_amount_30d": 78000.00
+        },
+        "red_flag_scores": {
+          "transactions_below_threshold": 0.88,
+          "multiple_accounts_same_parties": 0.82
+        },
+        "most_likely_typology": "structuring",
+        "typology_likelihoods": {
+          "structuring": 0.82
+        },
+        "typology_red_flags": {
+          "structuring": [
+            {
+              "red_flag": "transactions_below_threshold",
+              "score": 0.88,
+              "contributing_features": [
+                {"feature": "txn_count_near_threshold", "value": 8, "importance": 0.83},
+                {"feature": "unique_depositor_count", "value": 4, "importance": 0.79}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected_output": {
+      "typologies_identified": ["structuring", "smurfing"],
+      "red_flags_identified": ["transactions_below_threshold", "multiple_accounts_same_parties"],
+      "risk_assessment": "HIGH",
+      "key_facts_mentioned": [
+        "8 transactions",
+        "4 different depositors",
+        "$9,750 average",
+        "$78,000 total",
+        "smurfing",
+        "structuring"
+      ],
+      "recommendations_include": [
+        "identify relationships between depositors",
+        "verify if deposits are related",
+        "check if same-day deposits"
+      ],
+      "regulatory_citations": [
+        "31 USC 5324"
+      ],
+      "should_not_include": [
+        "trade-based",
+        "wire transfer"
+      ]
+    },
+    "evaluation_criteria": {
+      "must_identify_typology": true,
+      "must_identify_red_flags": true,
+      "must_cite_regulations": true,
+      "must_provide_recommendations": true,
+      "must_not_hallucinate": true,
+      "must_explain_attribution_chain": true,
+      "allow_additional_typologies": true,
+      "min_key_facts_coverage": 0.75
+    },
+    "created_by": "AML Compliance Expert",
+    "created_date": "2024-01-15",
+    "version": "1.0",
+    "tags": ["smurfing", "multiple_depositors", "coordination"]
+  },
+  {
+    "test_id": "STRUCT_003",
+    "category": "structuring",
+    "priority": "MEDIUM",
+    "description": "Borderline case - Transactions near but not consistently below threshold",
+    "input": {
+      "user_query": "Review activity for C000789",
+      "context": {
+        "cif_no": "C000789"
+      },
+      "ml_output": {
+        "feature_values": {
+          "txn_count_near_threshold": 3,
+          "avg_txn_amount": 9900.00,
+          "total_amount_30d": 29700.00,
+          "txn_count_above_threshold": 2,
+          "customer_profile_match": 0.65
+        },
+        "red_flag_scores": {
+          "transactions_below_threshold": 0.58,
+          "inconsistent_with_business_profile": 0.52
+        },
+        "most_likely_typology": "structuring",
+        "typology_likelihoods": {
+          "structuring": 0.62
+        }
+      }
+    },
+    "expected_output": {
+      "typologies_identified": ["structuring"],
+      "red_flags_identified": ["transactions_below_threshold"],
+      "risk_assessment": "MEDIUM",
+      "key_facts_mentioned": [
+        "3 transactions near threshold",
+        "2 transactions above threshold",
+        "mixed pattern"
+      ],
+      "recommendations_include": [
+        "request customer explanation",
+        "review business purpose",
+        "monitor for additional patterns"
+      ],
+      "should_not_include": [
+        "clear structuring",
+        "obvious pattern",
+        "definitely suspicious"
+      ]
+    },
+    "evaluation_criteria": {
+      "must_identify_typology": true,
+      "must_identify_red_flags": true,
+      "must_cite_regulations": false,
+      "must_provide_recommendations": true,
+      "must_not_hallucinate": true,
+      "must_explain_attribution_chain": false,
+      "allow_additional_typologies": false,
+      "min_key_facts_coverage": 0.7
+    },
+    "created_by": "AML Compliance Expert",
+    "created_date": "2024-01-15",
+    "version": "1.0",
+    "tags": ["borderline", "ambiguous", "edge_case"]
+  }
+]

@@ -51,11 +51,14 @@ class AMLAlertReviewerAgent(BaseAgent):
     def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Execute alert review based on request type.
 
+        This agent can autonomously request data via Intent Mapper → Data Retrieval.
+        It acts like a human user, formulating natural language data requests.
+
         Args:
             state: Current state with user query and retrieved data
 
         Returns:
-            AgentResponse with alert review results
+            AgentResponse with alert review results or data request
         """
         self.log_agent_start(state)
 
@@ -63,6 +66,62 @@ class AMLAlertReviewerAgent(BaseAgent):
         intent = state.get("intent", {})
         intent_type = intent.get("intent_type", "") if intent else ""
 
+        # Track data request attempts (prevent infinite loops)
+        data_attempts = state.get("review_attempts", 0) or 0  # Reuse review_attempts field
+        max_attempts = 3  # Match Review Agent pattern
+
+        # Step 1: Check if we need to request data
+        retrieved_data = state.get("retrieved_data")
+
+        if not retrieved_data or not retrieved_data.get("success"):
+            # No data yet - request initial data
+            if data_attempts >= max_attempts:
+                # Max attempts exceeded - proceed with fallback
+                self.logger.warning(
+                    f"AMLAlertReviewer: max data attempts ({max_attempts}) exceeded, proceeding without data"
+                )
+            else:
+                # Request data
+                data_request = self._assess_data_requirements(state)
+                self.logger.info(f"AMLAlertReviewer: requesting data (attempt {data_attempts + 1}/{max_attempts})")
+
+                return {
+                    "additional_query": data_request,
+                    "next_agent": "intent_mapper",
+                    "current_step": "alert_reviewer_requesting_data",
+                    "review_attempts": data_attempts + 1,
+                    "messages": self._append_message(
+                        state,
+                        f"[Alert Reviewer] Requesting data: {data_request}"
+                    )
+                }
+
+        # Step 2: Check if we need MORE data (progressive investigation)
+        if self._needs_more_data(state):
+            if data_attempts >= max_attempts:
+                # Max attempts exceeded - proceed with what we have
+                self.logger.warning(
+                    f"AMLAlertReviewer: max data attempts ({max_attempts}) exceeded, proceeding with available data"
+                )
+            else:
+                # Request additional data
+                additional_request = self._assess_additional_data_requirements(state)
+                self.logger.info(
+                    f"AMLAlertReviewer: requesting additional data (attempt {data_attempts + 1}/{max_attempts})"
+                )
+
+                return {
+                    "additional_query": additional_request,
+                    "next_agent": "intent_mapper",
+                    "current_step": "alert_reviewer_requesting_additional_data",
+                    "review_attempts": data_attempts + 1,
+                    "messages": self._append_message(
+                        state,
+                        f"[Alert Reviewer] Requesting additional data: {additional_request}"
+                    )
+                }
+
+        # Step 3: Data is available - perform analysis
         # Determine what type of alert review is needed
         query_lower = user_query.lower()
 
@@ -73,6 +132,126 @@ class AMLAlertReviewerAgent(BaseAgent):
         else:
             # Default: alert disposition review
             return self._review_alert(state)
+
+    def _assess_data_requirements(self, state: AMLCopilotState) -> str:
+        """Assess what initial data is needed for alert review.
+
+        Formulates a natural language data request that will be processed
+        by Intent Mapper (acts like a human user requesting data).
+
+        Args:
+            state: Current state
+
+        Returns:
+            Natural language data request string
+        """
+        context = state.get("context", {})
+        alert_id = context.get("alert_id")
+        cif_no = context.get("cif_no")
+        user_query = state["user_query"]
+
+        # Analyze query to determine what data is needed
+        query_lower = user_query.lower()
+
+        if "sar" in query_lower:
+            # SAR generation needs comprehensive data
+            return (
+                f"Get complete alert details for {alert_id if alert_id else 'the alert'}, "
+                f"customer profile for {cif_no if cif_no else 'the customer'}, "
+                f"full transaction history for the past 12 months, "
+                f"and any previous SAR filings or investigations"
+            )
+        elif any(word in query_lower for word in ["pattern", "transaction"]):
+            # Transaction pattern analysis
+            return (
+                f"Get detailed transaction data for {cif_no if cif_no else 'the customer'} "
+                f"including amounts, dates, counterparties, and transaction types for the past 6 months"
+            )
+        else:
+            # Standard alert review
+            return (
+                f"Get alert details for {alert_id if alert_id else 'the alert'}, "
+                f"customer basic info and risk profile for {cif_no if cif_no else 'the customer'}, "
+                f"and recent transaction summary"
+            )
+
+    def _assess_additional_data_requirements(self, state: AMLCopilotState) -> str:
+        """Assess what additional data is needed based on current analysis.
+
+        This enables progressive investigation - the alert reviewer can request
+        more specific data after initial review reveals patterns or concerns.
+
+        Args:
+            state: Current state with some retrieved_data
+
+        Returns:
+            Natural language request for additional data
+        """
+        retrieved_data = state.get("retrieved_data", {})
+        data = retrieved_data.get("data", {})
+
+        # Analyze what we have and what we might need
+        # This is a simple heuristic - could be enhanced with LLM-based assessment
+
+        has_transactions = any("transaction" in key.lower() for key in data.keys())
+        has_network = any("network" in key.lower() for key in data.keys())
+        has_risk = any("risk" in key.lower() for key in data.keys())
+
+        context = state.get("context", {})
+        cif_no = context.get("cif_no")
+
+        # Prioritize missing data types
+        if not has_transactions:
+            return f"Get detailed transaction history for customer {cif_no}"
+        elif not has_risk:
+            return f"Get risk indicators and behavioral features for customer {cif_no}"
+        elif not has_network:
+            return f"Get network analysis and high-risk relationships for customer {cif_no}"
+        else:
+            # Fallback: request transaction patterns near reporting thresholds
+            return f"Get cash transactions near $10,000 threshold for customer {cif_no} in the last 6 months"
+
+    def _needs_more_data(self, state: AMLCopilotState) -> bool:
+        """Determine if additional data is needed for complete analysis.
+
+        Checks if current retrieved_data is sufficient for alert review.
+        This prevents the alert reviewer from requesting data unnecessarily.
+
+        Args:
+            state: Current state
+
+        Returns:
+            True if more data is needed, False otherwise
+        """
+        retrieved_data = state.get("retrieved_data", {})
+
+        # If no data or retrieval failed, we already handled in __call__()
+        if not retrieved_data or not retrieved_data.get("success"):
+            return False
+
+        data = retrieved_data.get("data", {})
+
+        # Check if we have empty or minimal data
+        if not data or len(data) == 0:
+            return True
+
+        # Check if all tools returned errors (failed retrieval)
+        errors = retrieved_data.get("errors", [])
+        if errors and len(errors) == len(retrieved_data.get("tools_used", [])):
+            return True
+
+        # For now, assume first successful retrieval is sufficient
+        # This could be enhanced with more sophisticated logic:
+        # - Check if specific data types are present (customer + transactions + alerts)
+        # - Analyze data completeness based on query type
+        # - Use LLM to assess if current data is sufficient
+
+        # Simple heuristic: if we have at least 2 different data sources, we're good
+        if len(data) >= 2:
+            return False
+
+        # If we only have 1 data source, might need more
+        return True
 
     def _review_alert(self, state: AMLCopilotState) -> AgentResponse:
         """Analyze alert and provide disposition recommendation.

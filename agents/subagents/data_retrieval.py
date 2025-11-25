@@ -158,15 +158,24 @@ class DataRetrievalAgent(BaseAgent):
             "errors": error_details if error_details else None
         }
 
-        # Determine next step
-        next_agent = "compliance_expert" if state["user_query"] else "end"
+        # Determine next step - route back to the agent that requested data
+        current_step = state.get("current_step", "")
+
+        # Check if data was requested by alert reviewer (autonomous mode)
+        if "alert_reviewer" in current_step:
+            next_agent = "aml_alert_reviewer"
+        # Default: copilot mode - route to compliance expert
+        elif state["user_query"]:
+            next_agent = "compliance_expert"
+        else:
+            next_agent = "end"
 
         return {
             "retrieved_data": retrieval_result,
             "next_agent": next_agent,
             "current_step": "data_retrieved" if retrieval_result["success"] else "data_retrieval_partial",
             "messages": self._append_message(
-                state, 
+                state,
                 f"[Data Retrieval] Executed {len(tools_used)} tools. Success: {retrieval_result['success']}"
             )
         }

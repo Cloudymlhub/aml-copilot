@@ -38,6 +38,56 @@ class ComplianceAnalysis(TypedDict):
     regulatory_references: List[str]  # Relevant regulations/guidelines
 
 
+# ============================================================================
+# ML Model Output Types (Phase 5 - Adaptive Review System)
+# ============================================================================
+
+class DailyRiskScore(TypedDict):
+    """Daily risk score for trend analysis."""
+    date: str  # ISO date string
+    risk_score: float  # Risk score (0.0-1.0)
+
+
+class FeatureContribution(TypedDict):
+    """Individual feature contribution to a red flag."""
+    feature: str  # Feature name (e.g., "txn_count_near_threshold")
+    value: Any  # Feature value (can be int, float, str, etc.)
+    importance: float  # Feature importance score (0.0-1.0)
+
+
+class RedFlagDetail(TypedDict):
+    """Detailed red flag with contributing features."""
+    red_flag: str  # Red flag name (e.g., "transactions_below_threshold")
+    score: float  # Confidence score (0.0-1.0)
+    contributing_features: List[FeatureContribution]  # Features that triggered this red flag
+
+
+class MLModelOutput(TypedDict):
+    """ML model outputs for compliance analysis.
+
+    This structure captures the complete attribution chain:
+    Typology → Red Flags → Features
+
+    The Compliance Expert Agent interprets these pre-computed outputs
+    rather than computing features itself.
+    """
+    # Daily risk trend
+    daily_risk_scores: Optional[List[DailyRiskScore]]  # Time series of risk scores
+
+    # Pre-computed feature values
+    feature_values: Dict[str, Any]  # Raw feature values (e.g., {"txn_count_last_30d": 47})
+
+    # Red flag confidence scores
+    red_flag_scores: Dict[str, float]  # Red flag name → confidence score
+
+    # Typology assessments
+    most_likely_typology: Optional[str]  # Top typology (e.g., "structuring")
+    typology_likelihoods: Dict[str, float]  # Typology name → likelihood score
+
+    # Attribution chain (explains WHY the model flagged this)
+    typology_red_flags: Dict[str, List[RedFlagDetail]]  # Typology → Red flags → Features
+
+
 class AMLCopilotState(TypedDict):
     """State for AML Copilot multi-agent system.
 
@@ -62,6 +112,9 @@ class AMLCopilotState(TypedDict):
 
     # Compliance Analysis
     compliance_analysis: Optional[ComplianceAnalysis]
+
+    # ML Model Output (Phase 5)
+    ml_model_output: Optional[MLModelOutput]  # Pre-computed ML features and scores
 
     # Final Response
     final_response: Optional[str]
@@ -125,7 +178,10 @@ class AgentResponse(TypedDict, total=False):
     
     # Compliance Analysis
     compliance_analysis: Optional[ComplianceAnalysis]
-    
+
+    # ML Model Output
+    ml_model_output: Optional[MLModelOutput]
+
     # Final Response
     final_response: Optional[str]
     

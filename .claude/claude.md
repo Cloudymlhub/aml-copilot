@@ -78,13 +78,27 @@ START → Coordinator → AMLAlertReviewerAgent → END
 
 ## Key Design Patterns
 
-### 1. Repository Pattern
+### 1. Modular Prompt Architecture (NEW)
+Prompts are built from reusable components:
+- `agents/prompts/components/red_flag_catalog.py` - AML red flag definitions
+- `agents/prompts/components/typology_library.py` - Money laundering typologies
+- `agents/prompts/components/regulatory_references.py` - BSA/AML regulations
+
+**Benefits**:
+- Single source of truth for domain knowledge
+- Independent domain expert review of each component
+- Shared knowledge across Compliance Expert and AML Alert Reviewer
+- Easy testing with different component versions
+
+**Status**: Components marked as `PLACEHOLDER` - need expert review before production
+
+### 2. Repository Pattern
 All database access goes through repository layer:
 - `db/repositories/` - Clean separation of data access
 - Dependency injection via FastAPI
 - No direct SQL in agents
 
-### 2. Message History Control
+### 3. Message History Control
 Each agent has configurable message history limits:
 - **None**: ALL messages (ComplianceExpert, ReviewAgent, AMLAlertReviewer)
 - **0**: NO messages (DataRetrieval - pure executor)
@@ -93,12 +107,36 @@ Each agent has configurable message history limits:
 
 Rationale: Balance context awareness with token efficiency
 
-### 3. State Management
-- **Shared State**: `AMLCopilotState` (agents/state.py:41) - All agents read/write
+### 4. ML Model Integration (NEW)
+The system interprets pre-computed ML outputs rather than computing features:
+
+**Data Flow**:
+```
+ML Model Service → Feature Store → Data Service → Compliance Expert → Review
+```
+
+**ML Output Structure** (agents/state.py:65):
+- Daily risk score trends
+- Pre-computed feature values (transaction patterns, volumes)
+- Red flag confidence scores (e.g., "transactions_below_threshold": 0.95)
+- Typology likelihood assessments (e.g., "structuring": 0.85)
+- Attribution chain: Typology → Red Flags → Features
+
+**Tools** (tools/ml_output_tools.py):
+- `get_ml_risk_assessment(cif_no)` - Retrieve complete ML assessment
+- `get_feature_importance(cif_no, typology)` - Explain feature contributions
+
+**Current Status**: Uses test fixtures (`tests/fixtures/ml_model_fixtures.py`)
+- Marked as `MOCK_DATA` - needs ML service integration before production
+- 5 realistic scenarios: structuring, layering, low_risk, trade_based_ml, incomplete_data
+
+### 5. State Management
+- **Shared State**: `AMLCopilotState` (agents/state.py:91) - All agents read/write
 - **State Persistence**: Redis-backed checkpoints for conversation continuity
 - **Typed Updates**: `AgentResponse` TypedDict ensures type-safe state updates
+- **ML Outputs**: `ml_model_output` field added to state schema
 
-### 4. Configuration-Driven
+### 6. Configuration-Driven
 - Per-agent LLM models and parameters (config/settings.py:102)
 - Environment-based configuration (.env)
 - Separation of dev/test/prod settings
@@ -108,11 +146,16 @@ Rationale: Balance context awareness with token efficiency
 ```
 aml_copilot/
 ├── agents/                    # Multi-agent system
-│   ├── base_agent.py         # Abstract base class for all agents
+│   ├── base_agent.py         # Abstract base class (with shared JSON parsing)
 │   ├── copilot.py            # Main AMLCopilot orchestrator
 │   ├── graph.py              # LangGraph workflow definition
-│   ├── state.py              # Shared state schema
-│   ├── prompts/              # Agent prompts (organized by agent)
+│   ├── state.py              # Shared state schema (includes ML types)
+│   ├── prompts/              # Agent prompts
+│   │   ├── components/       # ✨ NEW: Reusable prompt components
+│   │   │   ├── red_flag_catalog.py       # PLACEHOLDER - needs expert review
+│   │   │   ├── typology_library.py       # PLACEHOLDER - needs expert review
+│   │   │   └── regulatory_references.py  # PLACEHOLDER - needs expert review
+│   │   └── [agent]_prompt.py # Per-agent prompts
 │   └── subagents/            # Individual agent implementations
 ├── api/                       # FastAPI REST API
 │   └── main.py               # API endpoints
@@ -120,18 +163,31 @@ aml_copilot/
 │   ├── agent_config.py       # Agent-specific configs
 │   └── settings.py           # Application settings
 ├── db/                        # Database layer
-│   ├── models.py             # SQLAlchemy ORM models
+│   ├── models/               # Pydantic models
 │   ├── repositories/         # Data access layer (repository pattern)
-│   └── session.py            # Database session management
-├── services/                  # Business logic
+│   └── services/             # Service layer (caching, business logic)
+│       ├── data_service.py   # Includes ML output retrieval (MOCK_DATA)
+│       └── cache_service.py  # Redis caching
+├── tools/                     # ✨ NEW: LangChain tools for data retrieval
+│   ├── customer_tools.py     # Customer data retrieval
+│   ├── transaction_tools.py  # Transaction data retrieval
+│   ├── alert_tools.py        # Alert data retrieval
+│   ├── ml_output_tools.py    # ✨ NEW: ML model output tools (MOCK_DATA)
+│   └── registry.py           # Tool registry (17 tools total)
 ├── tests/                     # Test suite
+│   └── fixtures/             # ✨ NEW: Test fixtures
+│       └── ml_model_fixtures.py  # ML output scenarios (MOCK_DATA)
+├── docs/                      # Documentation
+│   └── PLACEHOLDER_CONTENT_TRACKER.md  # ✨ NEW: Tracks all placeholders
 └── notebooks/                # Jupyter notebooks for testing
 
 .claude/                       # Claude Code workspace config
 ├── agents/                    # Custom Claude agents
 │   ├── aml-product-owner.md  # AML domain expert for development
 │   └── (other agents)        # Architecture/code review agents
-└── commands/                  # Custom slash commands (if any)
+└── commands/                  # Custom slash commands
+    ├── check-placeholders.md # ✨ NEW: Find all placeholder content
+    └── check-placeholders.sh # Script to inventory placeholders
 ```
 
 ## Database Schema (PostgreSQL)
@@ -164,10 +220,52 @@ When modifying agents:
 
 ### Testing Approach
 
-- **Unit Tests**: Test individual agent logic (tests/)
-- **Integration Tests**: Test agent workflows end-to-end
-- **Notebooks**: Interactive testing and exploration (notebooks/)
-- **Phase Tests**: Validated test suites per development phase (notebooks/phase*_validated_tests.ipynb)
+The AML Copilot uses a comprehensive two-suite testing strategy:
+
+#### Suite 1: AML Knowledge Tests (Golden Test Framework)
+Tests domain expertise and compliance analysis quality.
+
+**Location**: `tests/evaluation/`
+- **Test Runner**: `test_runner.py` - Automated evaluation with specialized evaluators
+- **Evaluators**:
+  - `correctness_evaluator.py` - Typology identification, red flag detection, citations
+  - `completeness_evaluator.py` - Key facts coverage, recommendation quality
+  - `hallucination_detector.py` - Invented information detection
+- **Golden Datasets**: `tests/fixtures/golden_datasets/` - Ground truth test cases
+- **Interactive Notebook**: `notebooks/agent_evaluation_demo.ipynb` - Stakeholder demos
+
+**Quick Start**:
+```python
+from tests.evaluation.test_runner import run_quick_evaluation
+
+report = run_quick_evaluation()
+print(f"Pass Rate: {report.pass_rate:.1%}")
+```
+
+**Metrics Tracked**:
+- Typology F1 score (precision, recall)
+- Red flag detection rate
+- Key facts coverage
+- Hallucination score
+- Overall quality score (0-100)
+
+#### Suite 2: Agent System Tests (In Progress)
+Tests AI assistant behavior (conversation, routing, error handling).
+
+**Location**: `tests/system/` (documented, not yet implemented)
+- Multi-turn conversation tests
+- Out-of-topic handling
+- Coordinator routing accuracy
+- Error handling (missing data, API failures)
+- Review loop behavior
+- Intent mapping accuracy
+
+**Documentation**:
+- **Testing Strategy**: `docs/TESTING_STRATEGY.md` - Comprehensive testing approach
+- **Framework Guide**: `tests/evaluation/README.md` - Evaluation framework usage
+- **Session Summaries**: `docs/SESSION_SUMMARY_2024_*.md` - Implementation details
+
+**Human Review**: Use `/human-review-test` command for expert validation
 
 ### Adding New Agents
 
@@ -201,6 +299,90 @@ poetry run pytest tests/ -v
 ### Start local databases
 ```bash
 docker-compose up -d
+```
+
+### Check placeholder content
+```bash
+# Find all placeholders
+/check-placeholders
+
+# Filter by priority
+grep -rE "(MOCK_DATA|PLACEHOLDER).*HIGH" --include="*.py" .
+```
+
+## Placeholder Content Management (NEW)
+
+### Overview
+The codebase contains two types of placeholder content:
+
+1. **MOCK_DATA**: Synthetic/fake data that will be completely replaced
+   - ML model outputs (test fixtures)
+   - Generated customer/transaction data
+   - Placeholder API responses
+
+2. **PLACEHOLDER**: Real content that needs expert review/validation
+   - AML domain knowledge (red flags, typologies)
+   - Regulatory references
+   - Business rules and thresholds
+
+### Code Markers
+All placeholder content is clearly marked:
+```python
+# MOCK_DATA: Brief description - Priority: HIGH/MEDIUM/LOW
+# PLACEHOLDER: Brief description - Needs [expert] review - Priority: HIGH/MEDIUM/LOW
+```
+
+### Finding Placeholders
+Use the `/check-placeholders` slash command or:
+```bash
+# All placeholders
+grep -rE "(MOCK_DATA|PLACEHOLDER)" --include="*.py" .
+
+# High priority only
+grep -rE "(MOCK_DATA|PLACEHOLDER).*HIGH" --include="*.py" .
+
+# Items needing expert review
+grep -r "Needs.*review" --include="*.py" .
+```
+
+### Current Inventory (Summary)
+- **19 total markers**: 11 MOCK_DATA + 8 PLACEHOLDER
+- **13 HIGH priority**: Must address before production
+  - 6 PLACEHOLDER: Red flags, typologies, regulations (need expert review)
+  - 5 MOCK_DATA: ML outputs (need service integration)
+  - 2 MOCK_DATA: Data generation and retrieval
+- **6 MEDIUM priority**: Important for full functionality
+
+### Pre-Production Requirements
+
+**For MOCK_DATA (ML Outputs)**:
+1. Integrate ML model service API
+2. Connect to feature store
+3. Implement real-time/near-real-time predictions
+4. Add fallback handling for service failures
+
+**For PLACEHOLDER (Domain Knowledge)**:
+1. **AML Compliance Expert Review**:
+   - Red flag catalog validation
+   - Typology library review
+   - Institution-specific customization
+
+2. **Legal/Regulatory Review**:
+   - Verify all regulatory citations (CFR sections)
+   - Confirm dollar thresholds are current
+   - Validate filing deadlines
+
+3. **Security Review**:
+   - ML service authentication/authorization
+   - Data access patterns
+   - PII handling
+
+### Documentation
+See `docs/PLACEHOLDER_CONTENT_TRACKER.md` for:
+- Complete inventory with file locations
+- Replacement strategies
+- Expert review checklists
+- Production deployment checklist
 ```
 
 ### Access Redis CLI

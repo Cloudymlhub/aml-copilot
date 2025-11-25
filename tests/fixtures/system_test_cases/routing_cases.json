@@ -1,0 +1,114 @@
+[
+  {
+    "test_id": "ROUTE_001",
+    "category": "data_query",
+    "priority": "HIGH",
+    "description": "Customer profile query - should route to IntentMapper",
+    "user_query": "Show me customer C000123 profile",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "expected_routing": {
+      "coordinator_routes_to": "intent_mapper",
+      "intent_type": "data_query",
+      "should_use_data_retrieval": true,
+      "should_use_compliance_expert": true
+    }
+  },
+  {
+    "test_id": "ROUTE_002",
+    "category": "alert_review",
+    "priority": "HIGH",
+    "description": "Alert disposition request - should route to AMLAlertReviewer",
+    "user_query": "Review alert ALT_2024_001 and recommend disposition",
+    "context": {
+      "alert_id": "ALT_2024_001"
+    },
+    "expected_routing": {
+      "coordinator_routes_to": "aml_alert_reviewer",
+      "should_bypass_intent_mapper": true,
+      "should_generate_disposition": true
+    }
+  },
+  {
+    "test_id": "ROUTE_003",
+    "category": "compliance_question",
+    "priority": "HIGH",
+    "description": "General AML question - should route to ComplianceExpert",
+    "user_query": "What are the signs of structuring?",
+    "expected_routing": {
+      "coordinator_routes_to": "compliance_expert",
+      "should_skip_data_retrieval": true,
+      "intent_type": "compliance_question"
+    }
+  },
+  {
+    "test_id": "ROUTE_004",
+    "category": "sar_generation",
+    "priority": "HIGH",
+    "description": "SAR filing request - should route to AMLAlertReviewer",
+    "user_query": "Generate SAR for alert ALT_2024_001",
+    "context": {
+      "alert_id": "ALT_2024_001"
+    },
+    "expected_routing": {
+      "coordinator_routes_to": "aml_alert_reviewer",
+      "should_generate_sar_narrative": true
+    }
+  },
+  {
+    "test_id": "ROUTE_005",
+    "category": "investigation",
+    "priority": "HIGH",
+    "description": "Investigation workflow - should use full pipeline",
+    "user_query": "Investigate customer C000123 for suspicious activity",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "expected_routing": {
+      "coordinator_routes_to": "intent_mapper",
+      "should_retrieve_data": true,
+      "should_analyze_with_compliance_expert": true,
+      "should_use_review_agent": true
+    }
+  },
+  {
+    "test_id": "ROUTE_006",
+    "category": "ambiguous",
+    "priority": "MEDIUM",
+    "description": "Ambiguous intent - coordinator should ask for clarification",
+    "user_query": "Tell me about it",
+    "context": {},
+    "expected_routing": {
+      "should_request_clarification": true,
+      "should_not_proceed": true
+    }
+  },
+  {
+    "test_id": "ROUTE_007",
+    "category": "regulatory_guidance",
+    "priority": "MEDIUM",
+    "description": "Regulatory threshold question - should route to ComplianceExpert",
+    "user_query": "What is the SAR filing deadline?",
+    "expected_routing": {
+      "coordinator_routes_to": "compliance_expert",
+      "should_skip_data_retrieval": true
+    }
+  },
+  {
+    "test_id": "ROUTE_008",
+    "category": "transaction_analysis",
+    "priority": "HIGH",
+    "description": "Transaction pattern analysis - should use full pipeline",
+    "user_query": "Analyze recent transaction patterns for C000123",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "expected_routing": {
+      "coordinator_routes_to": "intent_mapper",
+      "should_retrieve_transactions": true,
+      "should_use_ml_output": true,
+      "should_analyze_patterns": true
+    }
+  }
+]

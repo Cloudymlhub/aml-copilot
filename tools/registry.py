@@ -6,6 +6,7 @@ from langchain.tools import BaseTool
 from .customer_tools import CustomerDataTools
 from .transaction_tools import TransactionDataTools
 from .alert_tools import AlertDataTools
+from .ml_output_tools import get_ml_risk_assessment, get_feature_importance
 
 
 def get_all_tools() -> List[BaseTool]:
@@ -16,6 +17,7 @@ def get_all_tools() -> List[BaseTool]:
         - Customer data retrieval (8 tools)
         - Transaction data retrieval (4 tools)
         - Alert data retrieval (5 tools)
+        - ML model output retrieval (2 tools)
 
     Note: These tools return FACTUAL data only, with no interpretation.
     All database access uses dependency injection via the service layer.
@@ -32,6 +34,10 @@ def get_all_tools() -> List[BaseTool]:
     # Alert data tools
     tools.extend(AlertDataTools.get_tools())
 
+    # ML model output tools (Phase 5)
+    tools.append(get_ml_risk_assessment)
+    tools.append(get_feature_importance)
+
     return tools
 
 
@@ -39,7 +45,7 @@ def get_tools_by_category(category: str) -> List[BaseTool]:
     """Get tools for a specific category.
 
     Args:
-        category: One of 'customer', 'transaction', 'alert'
+        category: One of 'customer', 'transaction', 'alert', 'ml_output'
 
     Returns:
         List of tools for the specified category
@@ -50,8 +56,10 @@ def get_tools_by_category(category: str) -> List[BaseTool]:
         return TransactionDataTools.get_tools()
     elif category == "alert":
         return AlertDataTools.get_tools()
+    elif category == "ml_output":
+        return [get_ml_risk_assessment, get_feature_importance]
     else:
-        raise ValueError(f"Unknown category: {category}. Must be 'customer', 'transaction', or 'alert'")
+        raise ValueError(f"Unknown category: {category}. Must be 'customer', 'transaction', 'alert', or 'ml_output'")
 
 
 def get_tool_descriptions() -> dict:
@@ -60,6 +68,8 @@ def get_tool_descriptions() -> dict:
     Returns:
         Dictionary with tool categories and their descriptions
     """
+    ml_tools = [get_ml_risk_assessment, get_feature_importance]
+
     return {
         "customer_tools": {
             "count": len(CustomerDataTools.get_tools()),
@@ -89,6 +99,16 @@ def get_tool_descriptions() -> dict:
                     "description": tool.description.split("\n")[0],
                 }
                 for tool in AlertDataTools.get_tools()
+            ],
+        },
+        "ml_output_tools": {
+            "count": len(ml_tools),
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description.split("\n")[0],
+                }
+                for tool in ml_tools
             ],
         },
     }

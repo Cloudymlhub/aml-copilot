@@ -77,10 +77,10 @@ class ReviewAgent(BaseAgent):
         def _build_messages(invalid: bool = False):
             """Construct system/human messages with optional retry notice."""
             prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
-            
+
             # Include conversation history for comprehensive QA
             history_section = f"{history_context}\n\n" if history_context else ""
-            
+
             human_content = (
                 f"{prefix}{history_section}"
                 f"Original user query: {user_query}\n"
@@ -93,18 +93,11 @@ class ReviewAgent(BaseAgent):
                 HumanMessage(content=human_content)
             ]
 
-        def _parse_json(raw_response):
-            try:
-                return json.loads(raw_response.content)
-            except json.JSONDecodeError:
-                return None
-
-        review_response = self.llm.invoke(_build_messages())
-        review_result = _parse_json(review_response)
-
-        if review_result is None:
-            retry_response = self.llm.invoke(_build_messages(invalid=True))
-            review_result = _parse_json(retry_response)
+        # Use shared JSON parsing with automatic retry from BaseAgent
+        review_result, review_response = self._invoke_with_json_retry(
+            self.llm,
+            _build_messages
+        )
 
         if review_result:
             review_status = review_result.get("review_status", "passed")

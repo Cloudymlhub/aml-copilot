@@ -40,17 +40,25 @@ def route_after_coordinator(state: AMLCopilotState) -> str:
 def route_after_data_retrieval(state: AMLCopilotState) -> str:
     """Route after data retrieval.
 
+    Routes to the appropriate analyzer based on workflow:
+    - Copilot mode → compliance_expert
+    - Autonomous mode (alert reviewer requested data) → aml_alert_reviewer
+
     Args:
         state: Current state
 
     Returns:
-        Next node name
+        Next node name: "compliance_expert" | "aml_alert_reviewer" | END
     """
     next_agent = state.get("next_agent", "compliance_expert")
 
     if next_agent == "end":
         return END
+    elif next_agent == "aml_alert_reviewer":
+        # Data was requested by alert reviewer - route back to it
+        return "aml_alert_reviewer"
     else:
+        # Default: copilot mode - route to compliance expert
         return "compliance_expert"
 
 
@@ -67,6 +75,31 @@ def route_after_compliance_expert(state: AMLCopilotState) -> str:
     return "review_agent"
 
 
+def route_after_alert_reviewer(state: AMLCopilotState) -> str:
+    """Route after AML alert reviewer based on data needs.
+
+    The alert reviewer can autonomously request data by routing to intent_mapper.
+    This enables progressive investigation without user interaction.
+
+    Args:
+        state: Current state
+
+    Returns:
+        Next node name: "intent_mapper" | "aml_alert_reviewer" | END
+    """
+    next_agent = state.get("next_agent", "end")
+
+    if next_agent == "intent_mapper":
+        # Alert reviewer needs data - route to intent mapper
+        return "intent_mapper"
+    elif next_agent == "aml_alert_reviewer":
+        # After data retrieval, route back to alert reviewer for analysis
+        return "aml_alert_reviewer"
+    else:
+        # Analysis complete or error - end
+        return END
+
+
 def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     """Create the AML Copilot multi-agent graph.
 
@@ -81,7 +114,13 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
           ↓
         ├─→ intent_mapper → data_retrieval → compliance_expert → review_agent → END
         ├─→ compliance_expert → review_agent → END
-        └─→ aml_alert_reviewer → END (for alert review/SAR generation)
+        └─→ aml_alert_reviewer ←──────────────┐
+                  ↓                             │
+            (needs data?)                       │
+                  ↓                             │
+            intent_mapper → data_retrieval ────┘
+                  ↓
+                END
 
     Returns:
         Compiled LangGraph CompiledStateGraph
@@ -152,12 +191,18 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         }
     )
 
-    # AML alert reviewer routes to END (operational work is self-contained)
+    # AML alert reviewer routes based on data needs
+    # AUTONOMOUS DATA REQUEST LOOP: Alert reviewer can request data autonomously
+    # - Needs data → intent_mapper → data_retrieval → aml_alert_reviewer (loop)
+    # - Analysis complete → END
+    # Loop prevention: max_attempts check in alert reviewer prevents infinite loops
     workflow.add_conditional_edges(
         "aml_alert_reviewer",
-        lambda state: END,
+        route_after_alert_reviewer,
         {
-            END: END
+            "intent_mapper": "intent_mapper",  # Needs data
+            "aml_alert_reviewer": "aml_alert_reviewer",  # After data retrieval
+            END: END  # Analysis complete
         }
     )
 
@@ -171,12 +216,15 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         }
     )
 
-    # Data retrieval routes to compliance expert or END
+    # Data retrieval routes based on who requested the data
+    # - Copilot mode → compliance_expert
+    # - Autonomous mode (alert reviewer) → aml_alert_reviewer
     workflow.add_conditional_edges(
         "data_retrieval",
         route_after_data_retrieval,
         {
-            "compliance_expert": "compliance_expert",
+            "compliance_expert": "compliance_expert",  # Copilot mode
+            "aml_alert_reviewer": "aml_alert_reviewer",  # Autonomous mode
             END: END
         }
     )
@@ -191,6 +239,11 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     )
 
     # Review agent routes based on review outcome
+    # REVIEW LOOP MECHANISM: The review agent can route back to earlier agents for refinement
+    # - "needs_data" → intent_mapper → data_retrieval → compliance_expert → review_agent (loop)
+    # - "needs_refinement" → compliance_expert → review_agent (loop)
+    # Loop prevention: max_review_attempts check in route_after_review() forces END after N attempts
+    # This ensures quality while preventing infinite loops
     workflow.add_conditional_edges(
         "review_agent",
         route_after_review,

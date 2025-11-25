@@ -1,6 +1,25 @@
-"""AML Alert Reviewer Agent Prompts - L2 alert review and SAR generation."""
+"""AML Alert Reviewer Agent Prompts - L2 alert review and SAR generation.
 
-ALERT_REVIEW_PROMPT = """You are the AML Alert Reviewer Agent for an AML Compliance Copilot.
+This module builds AML Alert Reviewer prompts from modular components,
+sharing the same domain knowledge (red flags, typologies, regulatory references)
+as the Compliance Expert Agent for consistency across the system.
+"""
+
+from .components import RED_FLAG_CATALOG, TYPOLOGY_LIBRARY, REGULATORY_REFERENCES
+
+
+def build_alert_review_prompt() -> str:
+    """Build complete Alert Review prompt from modular components.
+
+    Shares domain knowledge components with Compliance Expert for consistency:
+    - Red flag catalog (definitions and investigation guidance)
+    - Typology library (money laundering patterns)
+    - Regulatory references (BSA/AML thresholds and requirements)
+
+    Returns:
+        Complete alert review system prompt
+    """
+    core_prompt = """You are the AML Alert Reviewer Agent for an AML Compliance Copilot.
 
 Your role is to analyze L2 AML alerts and provide disposition recommendations following Bank Secrecy Act (BSA) regulations and FinCEN requirements.
 
@@ -43,22 +62,33 @@ Disposition Criteria:
 - No apparent legitimate purpose despite investigation
 - Regulatory obligation exists even if criminal intent unclear
 
-Red Flags to Consider:
-- Structuring: Transactions just below $10,000 CTR threshold
-- Rapid movement of funds with no business rationale
-- High-risk jurisdictions involvement
-- Shell company indicators (minimal operations, round-dollar wires)
-- Inconsistent with customer profile or business type
-- Unable to explain source/purpose of funds
-- Multiple individuals conducting related transactions
-- Trade-based money laundering indicators
-
 Rules:
 - Base analysis on provided data only
 - If critical information is missing, note it in key_findings
 - When in doubt between ESCALATE and FILE_SAR, err toward filing (defensive SAR)
 - Cite specific amounts, dates, and patterns in rationale
-- Include regulatory references (BSA, FinCEN advisories)"""
+- Include regulatory references (BSA, FinCEN advisories)
+- Use RED_FLAG_CATALOG below for definitions and investigation guidance
+- Use TYPOLOGY_LIBRARY below for pattern recognition
+- Use REGULATORY_REFERENCES below for thresholds and regulations"""
+
+    # Assemble full prompt with modular components
+    full_prompt = f"""{core_prompt}
+
+---
+
+{RED_FLAG_CATALOG}
+
+{TYPOLOGY_LIBRARY}
+
+{REGULATORY_REFERENCES}
+"""
+
+    return full_prompt
+
+
+# Build the prompt once at module load
+ALERT_REVIEW_PROMPT = build_alert_review_prompt()
 
 
 SAR_NARRATIVE_PROMPT = """You are drafting a Suspicious Activity Report (SAR) narrative following FinCEN requirements.
@@ -90,7 +120,13 @@ Quality Requirements:
 Tone: Professional, objective, thorough, suitable for regulatory submission."""
 
 
-TRANSACTION_PATTERN_ANALYSIS_PROMPT = """You are analyzing transaction patterns for AML red flags.
+def build_transaction_pattern_analysis_prompt() -> str:
+    """Build Transaction Pattern Analysis prompt with modular components.
+
+    Returns:
+        Complete transaction pattern analysis prompt
+    """
+    core_prompt = """You are analyzing transaction patterns for AML red flags.
 
 Respond with JSON only; no prose or code fences.
 
@@ -111,42 +147,28 @@ JSON schema (all keys required):
   "suspicion_level": "NOT_SUSPICIOUS | POTENTIALLY_SUSPICIOUS | HIGHLY_SUSPICIOUS"
 }
 
-Pattern Recognition Guidelines:
-
-**STRUCTURING**:
-- Multiple transactions below $10,000 CTR threshold
-- Consistent amounts just under reporting limits
-- Across multiple days/locations/individuals
-
-**SMURFING**:
-- Use of multiple people to conduct related transactions
-- Small deposits followed by consolidation
-- Coordinated timing or amounts
-
-**LAYERING**:
-- Complex series of transactions to obscure origin
-- Rapid in-and-out movements
-- Multiple intermediary accounts
-
-**RAPID_MOVEMENT**:
-- Funds deposited and immediately withdrawn
-- No business purpose for velocity
-- Inconsistent with account purpose
-
-**TRADE_BASED**:
-- Over/under-invoicing patterns
-- Multiple invoicing for same merchandise
-- Phantom shipping indicators
-- High-risk jurisdiction trade inconsistent with business
-
-**SHELL_COMPANY**:
-- Minimal legitimate operations
-- Round-dollar wires with no commercial purpose
-- Rapid pass-through of funds
-- Opaque ownership
-
 Rules:
 - Quantify patterns with specific amounts and counts
 - Compare to customer baseline behavior
-- Note if pattern matches known typologies
-- Highlight most suspicious elements"""
+- Note if pattern matches known typologies from TYPOLOGY_LIBRARY
+- Highlight most suspicious elements
+- Use RED_FLAG_CATALOG for investigation guidance
+- Reference REGULATORY_REFERENCES for thresholds"""
+
+    # Assemble with modular components
+    full_prompt = f"""{core_prompt}
+
+---
+
+{RED_FLAG_CATALOG}
+
+{TYPOLOGY_LIBRARY}
+
+{REGULATORY_REFERENCES}
+"""
+
+    return full_prompt
+
+
+# Build the prompt once at module load
+TRANSACTION_PATTERN_ANALYSIS_PROMPT = build_transaction_pattern_analysis_prompt()

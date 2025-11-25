@@ -1,6 +1,6 @@
 """Data service layer with caching and business logic."""
 
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from datetime import datetime
 
 from db.manager import db_manager
@@ -181,7 +181,7 @@ class DataService:
 
     def get_customer_profile(
         self, cif_no: str, include_groups: List[str]
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Get customer with specific feature groups.
 
         Args:
@@ -358,6 +358,69 @@ class DataService:
             Number of cache keys deleted.
         """
         return self.cache.invalidate_customer(cif_no, groups)
+
+    # ML Model Output methods (Phase 5 - Adaptive Review System)
+
+    def get_ml_model_output(self, cif_no: str) -> Optional[Dict[str, Any]]:
+        """Get ML model output for customer (pre-computed features and risk scores).
+
+        MOCK_DATA: This method returns fixture data for development/testing.
+        In production, this would query the ML model service or feature store.
+
+        Args:
+            cif_no: Customer CIF number
+
+        Returns:
+            ML model output dict with typology scores, red flags, and attribution chain.
+            Returns None if customer not found or no ML output available.
+
+        Example structure:
+            {
+                "daily_risk_scores": [{"date": "2024-01-15", "risk_score": 0.85}, ...],
+                "feature_values": {"txn_count_last_30d": 47, ...},
+                "red_flag_scores": {"transactions_below_threshold": 0.95, ...},
+                "most_likely_typology": "structuring",
+                "typology_likelihoods": {"structuring": 0.85, ...},
+                "typology_red_flags": {"structuring": [...]}
+            }
+        """
+        # MOCK_DATA: Return fixture data for testing
+        # TODO: Replace with actual ML model service call in production
+
+        # Check cache first
+        cache_key = f"ml_output:{cif_no}"
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+
+        # MOCK_DATA: Use fixtures for development/testing
+        # In production, this would be:
+        # ml_output = ml_model_service.get_predictions(cif_no)
+
+        from tests.fixtures import get_ml_scenario
+
+        # For demo purposes, use different scenarios based on CIF number pattern
+        # This allows testing different ML output patterns
+        customer = self.get_customer_basic(cif_no)
+        if not customer:
+            return None
+
+        # Use risk score to determine scenario (temporary mock logic)
+        risk_score = customer.risk_score or 0
+
+        if risk_score >= 85:
+            ml_output = get_ml_scenario("structuring")
+        elif risk_score >= 70:
+            ml_output = get_ml_scenario("layering")
+        elif risk_score >= 40:
+            ml_output = get_ml_scenario("trade_based_ml")
+        else:
+            ml_output = get_ml_scenario("low_risk")
+
+        # Cache for 5 minutes (ML outputs should be relatively fresh)
+        self.cache.set(cache_key, ml_output, ttl=300)
+
+        return ml_output
 
 
 # Global data service instance

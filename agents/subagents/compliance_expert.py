@@ -66,10 +66,10 @@ class ComplianceExpertAgent(BaseAgent):
         def _build_analysis_messages(invalid: bool = False):
             """Construct messages for compliance analysis, with conversation history and optional retry notice."""
             prefix = "Your last reply was invalid JSON. Respond with JSON only per schema. " if invalid else ""
-            
+
             # Include full conversation history for comprehensive compliance analysis
             context_section = f"{history_context}\n\n" if history_context else ""
-            
+
             human_content = (
                 f"{prefix}{context_section}"
                 f"Current query: {user_query}\n"
@@ -81,20 +81,11 @@ class ComplianceExpertAgent(BaseAgent):
                 HumanMessage(content=human_content)
             ]
 
-        def _parse_json(raw_response):
-            try:
-                return json.loads(raw_response.content)
-            except json.JSONDecodeError:
-                return None
-
-        # Primary attempt
-        analysis_response = self.llm.invoke(_build_analysis_messages())
-        analysis_result = _parse_json(analysis_response)
-
-        # One-time retry if JSON parsing failed
-        if analysis_result is None:
-            retry_response = self.llm.invoke(_build_analysis_messages(invalid=True))
-            analysis_result = _parse_json(retry_response)
+        # Use shared JSON parsing with automatic retry from BaseAgent
+        analysis_result, analysis_response = self._invoke_with_json_retry(
+            self.llm,
+            _build_analysis_messages
+        )
 
         if analysis_result:
             compliance_analysis: ComplianceAnalysis = {

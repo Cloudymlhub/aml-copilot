@@ -8,7 +8,7 @@ Design Philosophy:
 """
 
 from datetime import datetime, date
-from typing import Optional, Any
+from typing import Optional, Any, Dict, Union
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -175,8 +175,8 @@ class CustomerUpdate(BaseModel):
 
 # Type hints for feature group data (for documentation)
 # Actual fields are dynamic and come from feature_catalog.json
-CustomerTransactionFeaturesDict = dict[str, int | float | Decimal]
-CustomerRiskFeaturesDict = dict[str, int | float]
-CustomerBehavioralFeaturesDict = dict[str, int | float]
-CustomerNetworkFeaturesDict = dict[str, int | float | str]
-CustomerKnowledgeGraphFeaturesDict = dict[str, float]
+CustomerTransactionFeaturesDict = Dict[str, Union[int, float, Decimal]]
+CustomerRiskFeaturesDict = Dict[str, Union[int, float]]
+CustomerBehavioralFeaturesDict = Dict[str, Union[int, float]]
+CustomerNetworkFeaturesDict = Dict[str, Union[int, float, str]]
+CustomerKnowledgeGraphFeaturesDict = Dict[str, float]

@@ -1,4 +1,15 @@
-"""Generate realistic mock AML data with engineered features."""
+"""Generate realistic mock AML data with engineered features.
+
+MOCK_DATA: Entire file generates synthetic data for development/testing - Priority: MEDIUM
+
+This module creates realistic but fake customer profiles, transactions, and alerts
+for database seeding during development. Should NOT be used in production.
+
+Production Strategy:
+- Keep for development/staging environments
+- Use anonymized production data for testing (with proper PII handling)
+- Implement data masking for non-production environments
+"""
 
 import random
 from datetime import datetime, timedelta

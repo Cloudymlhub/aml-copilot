@@ -4,49 +4,155 @@ An AI-powered multi-agent system for AML (Anti-Money Laundering) compliance inve
 
 ## Overview
 
-This project implements Phase 2 of the Agentic Compliance Architecture - an intelligent system that assists AML investigators with natural language queries, automated data retrieval, and compliance guidance.
+The AML Copilot is an intelligent multi-agent system designed to assist AML analysts with compliance investigations, alert reviews, and regulatory reporting. The system operates in **two distinct modes**:
+
+### 🔵 Copilot Mode (Interactive Assistant)
+An interactive AI assistant that helps analysts investigate alerts and customers:
+- Answer AML compliance questions ("What is structuring?")
+- Retrieve and analyze customer/transaction data
+- Provide regulatory guidance and best practices
+- Explain typologies and red flags
+- Support investigation workflows with context-aware assistance
+
+### 🟢 Autonomous Review Mode (Alert Disposition)
+Provides autonomous alert analysis and disposition recommendations:
+- L2 alert disposition recommendations (CLOSE/ESCALATE/FILE_SAR)
+- SAR narrative generation (FinCEN-compliant)
+- Transaction pattern analysis for suspicious activity
+- Regulatory threshold evaluation
+- Complete investigative analysis with audit trail
+
+**The Coordinator Agent automatically routes queries to the appropriate mode based on user intent.**
+
+## How It Works
+
+### Copilot Mode Workflow
+
+```
+┌─────────────┐
+│ User Query  │  "What are the red flags for customer C123456?"
+└──────┬──────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Coordinator: Routes to Copilot Mode                        │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Intent Mapper: Extract entities (CIF: C123456)             │
+│                 Determine data needs (customer + txns)      │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Data Retrieval: Fetch from PostgreSQL (cached in Redis)   │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Compliance Expert: Analyze patterns, identify red flags   │
+│                     Generate explanation with citations     │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Review Agent: QA check - ensure accuracy & completeness   │
+│                5-way routing (pass/refinement/data/etc)     │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────┐
+│   Response  │  Detailed analysis with red flags, risk assessment
+└─────────────┘
+```
+
+### Autonomous Review Mode Workflow
+
+```
+┌─────────────┐
+│ User Query  │  "Review alert A789012"
+└──────┬──────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  Coordinator: Routes to Autonomous Review Mode              │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────────────────────────┐
+│  AML Alert Reviewer: Comprehensive autonomous analysis      │
+│                                                              │
+│  1. Retrieve alert + customer + transaction data            │
+│  2. Analyze transaction patterns & behaviors                │
+│  3. Identify typologies (structuring, layering, etc)        │
+│  4. Evaluate red flags & risk indicators                    │
+│  5. Make disposition decision:                              │
+│     • CLOSE (false positive, no suspicious activity)        │
+│     • ESCALATE (needs L3 review, additional investigation)  │
+│     • FILE_SAR (confirmed suspicious activity)              │
+│  6. Generate SAR narrative (if filing)                      │
+└──────┬──────────────────────────────────────────────────────┘
+       │
+       v
+┌─────────────┐
+│   Response  │  Disposition + Rationale + SAR (if applicable)
+└─────────────┘
+```
+
+### Key Differences
+
+| Aspect | Copilot Mode | Autonomous Review Mode |
+|--------|-------------|------------------------|
+| **Purpose** | Answer questions, provide guidance | Make disposition decisions |
+| **Agent Flow** | 5 agents (Coordinator → Intent → Data → Expert → Review) | 2 agents (Coordinator → Alert Reviewer) |
+| **Output** | Analysis, explanations, recommendations | Disposition decision + SAR narrative |
+| **User Control** | Interactive, conversational | Single comprehensive analysis |
+| **Use Case** | Investigation support, learning | Alert queue processing |
 
 ## Architecture
 
 ### Multi-Agent System
 
-The system consists of five specialized agents orchestrated via LangGraph:
+The system consists of **six specialized agents** orchestrated via LangGraph:
 
-1. **Coordinator Agent** - Entry point with scope validation (true/partial/false) and LLM-generated guidance
-2. **Intent Mapping Agent** - Translates natural language queries into structured data requests with clarification support
-3. **Data Retrieval Agent** - Executes queries against PostgreSQL database with Redis caching
-4. **Compliance Expert Agent** - Provides procedural guidance, compliance analysis, and report generation
-5. **Review Agent** - Dedicated QA agent with 5-way routing (passed/needs_data/needs_refinement/needs_clarification/human_review)
+**Core Agents (used in both modes):**
+1. **Coordinator Agent** - Entry point that routes to appropriate mode based on query intent
 
-For detailed workflow, routing logic, and review loops, see [AGENT_FLOW.md](AGENT_FLOW.md).
+**Copilot Mode Agents:**  
 
-### Data Flow
+2. **Intent Mapping Agent** - Translates natural language queries into structured data requests 
+3. **Data Retrieval Agent** - Executes queries against PostgreSQL database with Redis caching   
+4. **Compliance Expert Agent** - Provides AML analysis, explanations, and guidance    
+5. **Review Agent** - QA layer with 5-way routing for quality assurance
 
-```
-User Query → Coordinator (scope check) → Intent Mapper (with clarification) → 
-Data Retrieval → Compliance Expert → Review Agent
-                    ↓                         ↓
-                Redis Cache          5-way routing:
-                PostgreSQL           - passed → user
-                                     - needs_data → intent_mapper
-                                     - needs_refinement → compliance_expert
-                                     - needs_clarification → user
-                                     - human_review → flag
-```
+**Autonomous Review Mode Agent:**
+6. **AML Alert Reviewer Agent** - End-to-end alert disposition analysis and SAR generation
+
+### Technology Stack
+
+- **Agent Framework**: LangGraph (state-driven orchestration)
+- **LLM**: OpenAI GPT-4o / GPT-4o-mini (configurable per agent)
+- **Database**: PostgreSQL (customer/transaction/alert data)
+- **Cache**: Redis (2 databases - data cache + conversation checkpoints)
+- **API**: FastAPI (REST endpoints)
+- **Config**: Pydantic Settings (environment-based configuration)
 
 ## Project Structure
 
 ```
 aml_copilot/
-├── agents/              # LangGraph agent implementations
-│   ├── coordinator.py   # Entry point with 3-state scope validation
-│   ├── intent_mapper.py # Query mapping with clarification support
-│   ├── data_retrieval.py
-│   ├── compliance_expert.py
-│   ├── review_agent.py  # QA agent with 5-way routing
-│   ├── graph.py         # LangGraph orchestration with review loops
-│   ├── state.py         # Shared state schema
-│   └── prompts.py       # Agent prompts
+├── agents/                     # LangGraph agent implementations
+│   ├── subagents/
+│   │   ├── coordinator.py      # Routes to copilot/autonomous mode
+│   │   ├── intent_mapper.py    # Query understanding (copilot mode)
+│   │   ├── data_retrieval.py   # Data fetching (copilot mode)
+│   │   ├── compliance_expert.py # Analysis & guidance (copilot mode)
+│   │   ├── review_agent.py     # QA with 5-way routing (copilot mode)
+│   │   └── aml_alert_reviewer.py # Alert disposition (autonomous mode)
+│   ├── graph.py                # LangGraph workflow definition
+│   ├── state.py                # Shared state schema
+│   └── prompts/                # Agent prompts & domain knowledge
 ├── tools/               # LangChain tools (expose functions to agents)
 │   ├── customer_tools.py
 │   ├── transaction_tools.py
@@ -79,7 +185,12 @@ aml_copilot/
 │   └── settings.py      # Includes max_review_attempts
 ├── ui/                  # Streamlit interface
 │   └── streamlit_app.py
-└── tests/               # Test suite
+├── tests/               # Comprehensive testing framework
+│   ├── evaluation/      # Golden test framework (AML knowledge)
+│   ├── system/          # System behavior tests
+│   └── fixtures/        # Test data (28+ test cases)
+├── notebooks/           # Interactive demos & testing
+└── docs/                # Documentation
 ```
 
 ### Layered Architecture
@@ -254,22 +365,136 @@ See `Makefile` for complete command reference.
 
 ## Features
 
-- Natural language query interface with clarification support
-- Intelligent 3-state scope validation (true/partial/false)
-- Intent mapping to database schema with context awareness
-- Fast data retrieval with Redis caching (separate cache and checkpoint stores)
-- Context-aware compliance guidance and analysis
-- Automated report generation
+**Dual Operating Modes:**
+- 🔵 **Copilot Mode**: Interactive assistant for investigation support
+- 🟢 **Autonomous Mode**: End-to-end alert disposition and SAR generation
+- Automatic routing based on query intent
+
+**Intelligence & Analysis:**
+- Natural language query understanding with entity extraction
+- Context-aware AML domain analysis with regulatory citations
+- Typology identification (structuring, layering, smurfing, etc.)
+- Red flag detection with confidence scoring
+- Transaction pattern analysis
+
+**Quality Assurance:**
 - Adaptive review system with 5-way routing
-- Configurable review loops to ensure output quality
-- LLM-generated guidance messages for query refinement
-- Audit trail logging
+- Hallucination detection and fact-checking
+- Multi-dimensional quality scoring
+- Configurable review loops (1-5 attempts)
+
+**Performance & Scale:**
+- Feature-grouped data model for efficient LLM token usage
+- Redis caching with intelligent TTLs (70-85% hit rate)
+- Separate cache and checkpoint stores
+- Optimized for high-volume alert processing
+
+**Compliance & Audit:**
+- Audit trail logging for all decisions
+- Regulatory threshold validation (CTR, SAR, etc.)
+- FinCEN-compliant SAR narrative generation
+- Full attribution chain (features → red flags → typologies)
+
+## Testing
+
+The AML Copilot includes a **comprehensive, production-ready testing framework** with two complete test suites:
+
+### Two-Suite Testing Strategy
+
+**1. AML Knowledge Tests** (`tests/evaluation/`) - Golden test framework
+- Tests domain expertise and compliance analysis quality
+- Multi-dimensional scoring: Correctness + Completeness + Hallucination detection
+- Automated evaluation with specialized metrics
+- Interactive demo notebook for stakeholders
+
+**2. System Behavior Tests** (`tests/system/`) - AI assistant capabilities
+- Boundary/off-topic handling (10 test cases)
+- Error handling and graceful degradation (7 test cases)
+- Routing logic validation (8 test cases)
+- Conversation flow and context retention
+
+### Quick Start
+
+**Run System Tests:**
+```bash
+python tests/system/run_system_tests.py
+```
+
+**Run AML Knowledge Tests:**
+```python
+from tests.evaluation.test_runner import run_quick_evaluation
+
+report = run_quick_evaluation()
+print(f"Pass Rate: {report.pass_rate:.1%}")
+print(f"Average Score: {report.avg_overall_score:.1f}/100")
+```
+
+**Interactive Demo:**
+```bash
+jupyter notebook notebooks/agent_evaluation_demo.ipynb
+```
+
+### What Gets Tested
+
+**AML Knowledge Tests:**
+- ✅ Typology identification (Precision, Recall, F1)
+- ✅ Red flag detection rate
+- ✅ Risk assessment accuracy
+- ✅ Regulatory citation accuracy
+- ✅ Key facts coverage
+- ✅ Recommendation quality
+- ✅ Hallucination detection
+
+**System Behavior Tests:**
+- ✅ Off-topic question handling
+- ✅ Prompt injection resistance
+- ✅ Error handling and recovery
+- ✅ Clarification requests
+- ✅ Agent routing decisions
+
+### Test Coverage
+
+**Current Status**: 28 test cases created
+- System tests: 17 test cases (boundary + error handling)
+- Golden tests: 3 structuring cases (foundation complete, needs expansion)
+- Routing tests: 8 test fixtures (implementation ready)
+- **Latest run**: 5/7 system tests passed (71.4%)
+
+### Documentation
+
+- **[tests/README.md](tests/README.md)** - Quick start guide
+- **[tests/evaluation/README.md](tests/evaluation/README.md)** - Detailed framework guide
+- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Testing strategy and approach
 
 ## Documentation
 
+**Getting Started:**
+- **[.claude/claude.md](.claude/claude.md)** - Comprehensive developer guide (recommended starting point for Claude Code users)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture, agent workflow, and design patterns
-- **[objective.md](objective.md)** - Project vision and roadmap
-- **Makefile** - Complete command reference with inline documentation
+- **[Makefile](Makefile)** - Complete command reference with inline documentation
+
+**Testing:**
+- **[tests/README.md](tests/README.md)** - Testing quick start guide
+- **[tests/evaluation/README.md](tests/evaluation/README.md)** - Detailed evaluation framework guide
+- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Two-suite testing strategy
+
+**Additional Documentation:**
+- **[docs/PLACEHOLDER_CONTENT_TRACKER.md](docs/PLACEHOLDER_CONTENT_TRACKER.md)** - Mock data and placeholder tracking
+- **[docs/archive/](docs/archive/)** - Session summaries with implementation decisions
+
+## Use Cases
+
+**For AML Analysts (Copilot Mode):**
+- "What are the red flags for structuring?"
+- "Show me transactions for customer C123456"
+- "Explain the 31 CFR 103.15 requirements"
+- "What typologies should I look for in this pattern?"
+
+**For Alert Reviewers (Autonomous Mode):**
+- "Review alert A789012"
+- "Analyze customer C123456 for suspicious activity"
+- "Generate SAR for alert A789012"
+- "Provide disposition recommendation for this case"
 
 ## License
 

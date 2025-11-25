@@ -1,0 +1,129 @@
+[
+  {
+    "test_id": "ERROR_001",
+    "category": "missing_customer",
+    "priority": "HIGH",
+    "description": "Customer not found - should handle gracefully",
+    "user_query": "Analyze customer C999999",
+    "context": {
+      "cif_no": "C999999"
+    },
+    "data_state": "customer_not_found",
+    "expected_behavior": {
+      "should_not_crash": true,
+      "should_have_error_message": true,
+      "error_message_should_include": [
+        "not found",
+        "unavailable",
+        "unable to locate"
+      ],
+      "should_not_hallucinate": true,
+      "should_not_invent_customer_data": true
+    }
+  },
+  {
+    "test_id": "ERROR_002",
+    "category": "missing_data",
+    "priority": "HIGH",
+    "description": "No transaction data - should handle gracefully",
+    "user_query": "Show me recent transactions for customer C000123",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "data_state": "no_transactions",
+    "expected_behavior": {
+      "should_not_crash": true,
+      "should_explain_no_data": true,
+      "should_not_hallucinate_transactions": true
+    }
+  },
+  {
+    "test_id": "ERROR_003",
+    "category": "invalid_input",
+    "priority": "MEDIUM",
+    "description": "Invalid CIF format - should handle validation error",
+    "user_query": "Analyze customer INVALID_FORMAT",
+    "context": {
+      "cif_no": "INVALID_FORMAT"
+    },
+    "expected_behavior": {
+      "should_not_crash": true,
+      "should_request_valid_format": true,
+      "error_message_should_include": [
+        "invalid",
+        "format",
+        "customer id"
+      ]
+    }
+  },
+  {
+    "test_id": "ERROR_004",
+    "category": "incomplete_context",
+    "priority": "MEDIUM",
+    "description": "Missing required context - should ask for clarification",
+    "user_query": "Review the alert",
+    "context": {},
+    "expected_behavior": {
+      "should_ask_for_alert_id": true,
+      "should_not_proceed_without_context": true,
+      "clarification_should_include": [
+        "alert id",
+        "which alert"
+      ]
+    }
+  },
+  {
+    "test_id": "ERROR_005",
+    "category": "ml_service_unavailable",
+    "priority": "HIGH",
+    "description": "ML service down - should gracefully degrade",
+    "user_query": "Analyze customer C000123",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "data_state": "ml_service_unavailable",
+    "expected_behavior": {
+      "should_not_crash": true,
+      "should_explain_limitation": true,
+      "should_offer_manual_analysis": true,
+      "should_use_available_data": true
+    }
+  },
+  {
+    "test_id": "ERROR_006",
+    "category": "database_error",
+    "priority": "HIGH",
+    "description": "Database connection error - should handle gracefully",
+    "user_query": "Show customer C000123 profile",
+    "context": {
+      "cif_no": "C000123"
+    },
+    "data_state": "database_error",
+    "expected_behavior": {
+      "should_not_crash": true,
+      "should_have_user_friendly_error": true,
+      "should_not_expose_technical_details": true,
+      "error_message_should_include": [
+        "temporarily unavailable",
+        "try again"
+      ]
+    }
+  },
+  {
+    "test_id": "ERROR_007",
+    "category": "partial_data",
+    "priority": "MEDIUM",
+    "description": "Incomplete customer profile - should analyze with available data",
+    "user_query": "Analyze customer C000456",
+    "context": {
+      "cif_no": "C000456"
+    },
+    "data_state": "incomplete_profile",
+    "expected_behavior": {
+      "should_proceed_with_available_data": true,
+      "should_note_missing_data": true,
+      "should_not_hallucinate_missing_fields": true,
+      "should_provide_qualified_analysis": true
+    }
+  }
+]

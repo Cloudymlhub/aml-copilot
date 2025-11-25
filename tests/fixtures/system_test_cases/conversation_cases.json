@@ -1,0 +1,445 @@
+[
+  {
+    "test_id": "CONV_REF_001",
+    "category": "reference_resolution",
+    "priority": "HIGH",
+    "description": "Pronoun resolution - 'their'",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001",
+        "expected_behavior": {
+          "routes_to": "intent_mapper",
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "What's their risk score?",
+        "expected_behavior": {
+          "routes_to": "intent_mapper",
+          "resolves_reference": {"their": "C000001"},
+          "fetches_data": true,
+          "response_includes": ["risk"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true
+    }
+  },
+  {
+    "test_id": "CONV_REF_002",
+    "category": "reference_resolution",
+    "priority": "HIGH",
+    "description": "Demonstrative reference - 'that customer'",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me that customer's transactions",
+        "expected_behavior": {
+          "resolves_reference": {"that customer": "C000001"},
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true
+    }
+  },
+  {
+    "test_id": "CONV_REF_003",
+    "category": "reference_resolution",
+    "priority": "HIGH",
+    "description": "Implicit entity continuation",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me transactions for C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me more details",
+        "expected_behavior": {
+          "resolves_reference": {"implicit": "C000001"},
+          "response_includes": ["C000001"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true
+    }
+  },
+  {
+    "test_id": "CONV_REF_004",
+    "category": "reference_resolution",
+    "priority": "MEDIUM",
+    "description": "Multiple entity tracking",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Compare customers C000001 and C000002",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001", "C000002"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me the first one's transactions",
+        "expected_behavior": {
+          "resolves_reference": {"first one": "C000001"},
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true
+    }
+  },
+  {
+    "test_id": "CONV_REF_005",
+    "category": "reference_resolution",
+    "priority": "MEDIUM",
+    "description": "Temporal reference",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me transactions from last month for C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "What about the month before that?",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true
+    }
+  },
+  {
+    "test_id": "CONV_DATA_001",
+    "category": "cross_turn_data_access",
+    "priority": "CRITICAL",
+    "description": "Sequential data access - validate message history usage",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me their transactions",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "Based on what we've seen, what do you think?",
+        "expected_behavior": {
+          "references_turn_1_data": true,
+          "response_includes": ["customer", "transaction"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_DATA_002",
+    "category": "cross_turn_data_access",
+    "priority": "CRITICAL",
+    "description": "Cross-reference synthesis - THE critical test",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001 basic info",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001", "risk"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me their transactions",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "Based on the customer's risk rating and these transactions, what's the overall risk?",
+        "expected_behavior": {
+          "references_turn_1_data": true,
+          "cross_turn_synthesis": true,
+          "response_includes": ["risk"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "no_reference_errors": true,
+      "turn_3_references_risk_from_turn_1": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_DATA_003",
+    "category": "cross_turn_data_access",
+    "priority": "CRITICAL",
+    "description": "Return to earlier data - tests message history recall",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me their transactions",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "What was the customer's name again?",
+        "expected_behavior": {
+          "references_turn_1_data": true,
+          "response_includes": ["C000001"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_DATA_004",
+    "category": "cross_turn_data_access",
+    "priority": "CRITICAL",
+    "description": "Progressive data synthesis - multi-turn accumulation",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001 basic info",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["C000001"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me their transaction features",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "Show me their risk indicators",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["risk"]
+        }
+      },
+      {
+        "turn_number": 4,
+        "user_query": "Given all this data, what's the overall AML risk assessment?",
+        "expected_behavior": {
+          "cross_turn_synthesis": true,
+          "response_includes": ["risk", "assessment"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_DATA_005",
+    "category": "cross_turn_data_access",
+    "priority": "HIGH",
+    "description": "Data not in history - negative test",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Show me customer C000001",
+        "expected_behavior": {
+          "fetches_data": true
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Show me their transactions",
+        "expected_behavior": {
+          "fetches_data": true
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "How many high-risk relationships did the customer have?",
+        "expected_behavior": {
+          "response_includes": ["network", "relationship"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true
+    }
+  },
+  {
+    "test_id": "CONV_CTX_001",
+    "category": "context_accumulation",
+    "priority": "HIGH",
+    "description": "Progressive investigation - no repetition",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Analyze customer C000001",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["analysis"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "What about their transaction patterns?",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["transaction", "pattern"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "Are there any red flags?",
+        "expected_behavior": {
+          "response_includes": ["red flag"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_CTX_002",
+    "category": "context_accumulation",
+    "priority": "HIGH",
+    "description": "Clarification follow-up - references previous findings",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "Analyze customer C000001 for suspicious activity",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["analysis"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Why did you identify that as suspicious?",
+        "expected_behavior": {
+          "references_turn_1_data": true,
+          "response_includes": ["suspicious"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "message_history_sufficient": true
+    }
+  },
+  {
+    "test_id": "CONV_CTX_003",
+    "category": "context_accumulation",
+    "priority": "HIGH",
+    "description": "Deepening analysis - progressive depth",
+    "context": {"cif_no": "C000001"},
+    "turns": [
+      {
+        "turn_number": 1,
+        "user_query": "What typologies apply to customer C000001?",
+        "expected_behavior": {
+          "fetches_data": true,
+          "response_includes": ["typology"]
+        }
+      },
+      {
+        "turn_number": 2,
+        "user_query": "Explain the structuring typology in detail",
+        "expected_behavior": {
+          "response_includes": ["structuring"]
+        }
+      },
+      {
+        "turn_number": 3,
+        "user_query": "What regulatory citations support this?",
+        "expected_behavior": {
+          "response_includes": ["regulatory", "citation"]
+        }
+      }
+    ],
+    "success_criteria": {
+      "all_turns_complete": true,
+      "message_history_sufficient": true
+    }
+  }
+]

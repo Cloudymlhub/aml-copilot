@@ -177,9 +177,9 @@ class BaseAgent(ABC):
     
     def log_agent_start(self, state: AMLCopilotState) -> None:
         """Log agent invocation for debugging.
-        
+
         Standard logging format for agent startup.
-        
+
         Args:
             state: Current state
         """
@@ -189,3 +189,90 @@ class BaseAgent(ABC):
             state.get("session_id"),
             self.message_history_limit
         )
+
+    def _parse_json_response(self, response) -> Optional[dict]:
+        """Parse JSON from LLM response, returning None on failure.
+
+        Safely attempts to parse JSON from an LLM response object.
+        Handles both string content and objects with .content attribute.
+
+        Args:
+            response: LLM response object (expects .content attribute)
+
+        Returns:
+            Parsed dict if successful, None if parsing fails
+
+        Example:
+            >>> response = llm.invoke(messages)
+            >>> parsed = self._parse_json_response(response)
+            >>> if parsed:
+            ...     print(parsed["key"])
+            ... else:
+            ...     print("Failed to parse JSON")
+        """
+        try:
+            import json
+            content = response.content if hasattr(response, 'content') else str(response)
+            return json.loads(content)
+        except (json.JSONDecodeError, AttributeError, ValueError):
+            return None
+
+    def _invoke_with_json_retry(
+        self,
+        llm,
+        messages_builder,
+        parse_fallback = None
+    ) -> tuple[Optional[dict], any]:
+        """Invoke LLM with automatic retry on JSON parse failure.
+
+        This method implements the common pattern of:
+        1. Invoke LLM with messages
+        2. Try to parse JSON response
+        3. If parsing fails, retry once with "invalid JSON" notice
+        4. Return parsed result or None
+
+        Args:
+            llm: Language model to invoke
+            messages_builder: Callable that takes invalid=False/True and returns message list
+            parse_fallback: Optional fallback value if parsing fails on both attempts
+
+        Returns:
+            Tuple of (parsed_dict, raw_response):
+            - parsed_dict: Parsed JSON dict if successful, None otherwise
+            - raw_response: The final raw LLM response object
+
+        Example:
+            >>> def build_messages(invalid=False):
+            ...     prefix = "Invalid JSON. Retry. " if invalid else ""
+            ...     return [
+            ...         SystemMessage(content=system_prompt),
+            ...         HumanMessage(content=f"{prefix}{query}")
+            ...     ]
+            >>>
+            >>> parsed, raw = self._invoke_with_json_retry(
+            ...     self.llm,
+            ...     build_messages
+            ... )
+            >>> if parsed:
+            ...     result = parsed.get("key")
+        """
+        # Primary attempt
+        response = llm.invoke(messages_builder(invalid=False))
+        parsed = self._parse_json_response(response)
+
+        # One-time retry if JSON parsing failed
+        if parsed is None:
+            self.logger.warning(
+                "%s: JSON parse failed, retrying with invalid flag",
+                self.__class__.__name__
+            )
+            response = llm.invoke(messages_builder(invalid=True))
+            parsed = self._parse_json_response(response)
+
+            if parsed is None:
+                self.logger.error(
+                    "%s: JSON parse failed on retry",
+                    self.__class__.__name__
+                )
+
+        return parsed, response
