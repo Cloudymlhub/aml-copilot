@@ -9,9 +9,9 @@ This script shows how to:
 
 import sys
 from pathlib import Path
-from tests.config import GOLDEN_DATASETS_DIR, EVALUATION_REPORTS_DIR
-from tests.evaluation.test_runner import AgentEvaluationRunner
-from tests.evaluation.evaluators import (
+from evaluation.config import GOLDEN_DATASETS_DIR, RESULTS_DIR
+from evaluation.test_runner import AgentEvaluationRunner
+from evaluation.evaluators import (
     CorrectnessEvaluator,
     CompletenessEvaluator,
     HallucinationDetector
@@ -226,7 +226,7 @@ def example_5_save_report():
     report = runner.run_evaluation_suite(dataset_path)
 
     # Save report
-    output_path = EVALUATION_REPORTS_DIR / f"{report.report_id}.json"
+    output_path = RESULTS_DIR / f"{report.report_id}.json"
     runner.save_report(report, output_path)
 
     print(f"\n✅ Report saved to: {output_path}")
