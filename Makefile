@@ -195,52 +195,85 @@ api-prod: ## Run API in production mode (no reload)
 
 ##@ Testing & Quality
 
-test: ## Run all tests (conversation + evaluation + unit)
-	@echo "$(GREEN)Running all tests...$(NC)"
-	@$(MAKE) test-conversations
-	@echo ""
-	@$(MAKE) test-evaluation
-	@echo ""
+test: ## Run all tests (unit tests only)
+	@echo "$(GREEN)Running unit tests...$(NC)"
 	@$(MAKE) test-unit
-
-test-conversations: ## Run conversation tests (multi-turn behavior)
-	@echo "$(GREEN)Running conversation tests...$(NC)"
-	$(PYTHON) evaluation/conversation/test_conversations.py
-
-test-conversations-category: ## Run conversation tests for specific category (usage: make test-conversations-category CATEGORY=cross_turn_data_access)
-	@echo "$(GREEN)Running conversation tests for category: $(CATEGORY)...$(NC)"
-	$(PYTHON) -c "from evaluation.conversation.test_conversations import ConversationTestRunner; from pathlib import Path; runner = ConversationTestRunner(); runner.run_test_suite(Path('evaluation/conversation/fixtures/conversation_cases.json'), category_filter='$(CATEGORY)')"
-
-test-evaluation: ## Run AML knowledge evaluation tests (golden dataset)
-	@echo "$(GREEN)Running AML knowledge evaluation...$(NC)"
-	$(PYTHON) -c "from evaluation.test_runner import run_quick_evaluation; report = run_quick_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
-
-test-evaluation-full: ## Run full evaluation with detailed report
-	@echo "$(GREEN)Running full AML knowledge evaluation...$(NC)"
-	$(PYTHON) -c "from evaluation.test_runner import run_comprehensive_evaluation; report = run_comprehensive_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
 
 test-unit: ## Run unit tests with pytest
 	@echo "$(GREEN)Running unit tests...$(NC)"
 	$(PYTHON) -m pytest tests/ -v
 
-test-coverage: ## Run tests with coverage report
+test-coverage: ## Run unit tests with coverage report
 	@echo "$(GREEN)Running tests with coverage...$(NC)"
 	$(PYTHON) -m pytest tests/ --cov=. --cov-report=html --cov-report=term
 
-test-results: ## View latest conversation test results
-	@echo "$(GREEN)Latest Conversation Test Results:$(NC)"
+##@ AI Agent Evaluation
+
+evaluate-all: ## Run all evaluations and generate scorecard (complete pipeline)
+	@echo "$(GREEN)Running complete evaluation pipeline...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Step 1/4: Conversation Tests$(NC)"
+	@$(MAKE) evaluate-conversations || true
+	@echo ""
+	@echo "$(YELLOW)Step 2/4: AML Knowledge Tests$(NC)"
+	@$(MAKE) evaluate-knowledge || true
+	@echo ""
+	@echo "$(YELLOW)Step 3/4: System Behavior Tests$(NC)"
+	@$(MAKE) evaluate-system || true
+	@echo ""
+	@echo "$(YELLOW)Step 4/4: Generate Scorecard$(NC)"
+	@$(MAKE) evaluate-scorecard
+	@echo ""
+	@echo "$(GREEN)✓ Complete evaluation pipeline finished!$(NC)"
+	@echo "View results: make evaluate-results"
+	@echo "Open notebook: jupyter notebook notebooks/test_scorecard_dashboard.ipynb"
+
+evaluate: ## Run all evaluations (conversations + knowledge + system)
+	@echo "$(GREEN)Running all evaluations...$(NC)"
+	@$(MAKE) evaluate-conversations || true
+	@echo ""
+	@$(MAKE) evaluate-knowledge || true
+	@echo ""
+	@$(MAKE) evaluate-system || true
+
+evaluate-conversations: ## Run conversation tests (multi-turn behavior)
+	@echo "$(GREEN)Running conversation evaluation...$(NC)"
+	$(PYTHON) evaluation/conversation/test_conversations.py
+
+evaluate-conversations-category: ## Run conversation tests for specific category (usage: make evaluate-conversations-category CATEGORY=cross_turn_data_access)
+	@echo "$(GREEN)Running conversation tests for category: $(CATEGORY)...$(NC)"
+	$(PYTHON) -c "from evaluation.conversation.test_conversations import ConversationTestRunner; from pathlib import Path; runner = ConversationTestRunner(); runner.run_test_suite(Path('evaluation/conversation/fixtures/conversation_cases.json'), category_filter='$(CATEGORY)')"
+
+evaluate-knowledge: ## Run AML knowledge evaluation tests (golden dataset) [THRESHOLD=70]
+	@echo "$(GREEN)Running AML knowledge evaluation...$(NC)"
+	$(PYTHON) -c "from evaluation.test_runner import run_quick_evaluation; report = run_quick_evaluation(min_passing_score=$(if $(THRESHOLD),$(THRESHOLD),70)); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
+
+evaluate-knowledge-full: ## Run full knowledge evaluation with detailed report
+	@echo "$(GREEN)Running full AML knowledge evaluation...$(NC)"
+	$(PYTHON) -c "from evaluation.test_runner import run_comprehensive_evaluation; report = run_comprehensive_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
+
+evaluate-system: ## Run system behavior tests
+	@echo "$(GREEN)Running system behavior evaluation...$(NC)"
+	$(PYTHON) evaluation/system/run_system_tests.py
+
+evaluate-results: ## View latest conversation evaluation results
+	@echo "$(GREEN)Latest Conversation Evaluation Results:$(NC)"
 	@if [ -f evaluation/results/conversation_tests_latest.json ]; then \
-		cat evaluation/results/conversation_tests_latest.json | $(PYTHON) -m json.tool | grep -E "(timestamp|total|passed|failed|errors|pass_rate|category_stats)" -A 20; \
+		if command -v jq >/dev/null 2>&1; then \
+			jq '{timestamp, total, passed, failed, errors, pass_rate, category_stats}' evaluation/results/conversation_tests_latest.json; \
+		else \
+			cat evaluation/results/conversation_tests_latest.json | $(PYTHON) -m json.tool | grep -E "(timestamp|total|passed|failed|errors|pass_rate|category_stats)" -A 20; \
+		fi; \
 	else \
-		echo "$(RED)No test results found. Run 'make test-conversations' first.$(NC)"; \
+		echo "$(RED)No results found. Run 'make evaluate-conversations' first.$(NC)"; \
 	fi
 
-test-results-history: ## Show history of test runs
-	@echo "$(GREEN)Test Results History:$(NC)"
-	@ls -lth evaluation/results/conversation_tests_*.json 2>/dev/null | head -10 || echo "$(RED)No test results found$(NC)"
+evaluate-results-history: ## Show history of evaluation runs
+	@echo "$(GREEN)Evaluation Results History:$(NC)"
+	@ls -lth evaluation/results/conversation_tests_*.json 2>/dev/null | head -10 || echo "$(RED)No results found$(NC)"
 
-test-scorecard: ## Generate unified scorecard for all test types
-	@echo "$(GREEN)Generating unified test scorecard...$(NC)"
+evaluate-scorecard: ## Generate unified scorecard for all evaluation types
+	@echo "$(GREEN)Generating unified evaluation scorecard...$(NC)"
 	$(PYTHON) evaluation/scorecard/generate_scorecard.py
 
 lint: ## Run linting checks
@@ -280,6 +313,7 @@ check-tools: ## Verify all required tools are installed
 	@command -v docker-compose >/dev/null 2>&1 && echo "✓ Docker Compose installed" || echo "✗ Docker Compose not found"
 	@command -v poetry >/dev/null 2>&1 && echo "✓ Poetry installed" || echo "✗ Poetry not found"
 	@command -v python3 >/dev/null 2>&1 && echo "✓ Python3 installed" || echo "✗ Python3 not found"
+	@command -v jq >/dev/null 2>&1 && echo "✓ jq installed (recommended)" || echo "⚠ jq not found (optional, but recommended for better JSON viewing)"
 
 ##@ Quick Start Commands
 

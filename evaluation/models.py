@@ -61,6 +61,7 @@ class EvaluationCriteria(BaseModel):
     must_explain_attribution_chain: bool = Field(False, description="Must explain typology → red flags → features")
     allow_additional_typologies: bool = Field(False, description="Allow identifying additional typologies beyond expected")
     min_key_facts_coverage: float = Field(0.8, description="Minimum % of key facts that must be covered")
+    min_passing_score: float = Field(70.0, description="Minimum overall score (0-100) required to pass")
 
 
 class GoldenTestCase(BaseModel):

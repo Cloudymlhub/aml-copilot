@@ -1,0 +1,81 @@
+{
+  "generated_at": "2025-11-25T23:28:48.272968",
+  "overall": {
+    "total_tests": 20,
+    "total_passed": 8,
+    "overall_pass_rate": 0.4,
+    "status": "\u274c CRITICAL"
+  },
+  "by_test_type": {
+    "conversation_tests": {
+      "total": 13,
+      "passed": 4,
+      "failed": 9,
+      "pass_rate": 0.3076923076923077,
+      "category_stats": {
+        "reference_resolution": {
+          "total": 5,
+          "passed": 1,
+          "failed": 4,
+          "errors": 0
+        },
+        "cross_turn_data_access": {
+          "total": 5,
+          "passed": 1,
+          "failed": 4,
+          "errors": 0
+        },
+        "context_accumulation": {
+          "total": 3,
+          "passed": 2,
+          "failed": 1,
+          "errors": 0
+        }
+      },
+      "status": "\u274c",
+      "available": true
+    },
+    "evaluation_tests": {
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "pass_rate": 0.0,
+      "avg_score": 0.0,
+      "status": "\u274c",
+      "available": false
+    },
+    "system_tests": {
+      "total": 7,
+      "passed": 4,
+      "failed": 2,
+      "pass_rate": 0.5714285714285714,
+      "category_stats": {
+        "boundary_handling": {
+          "total": 5,
+          "passed": 4,
+          "failed": 1,
+          "errors": 0
+        },
+        "error_handling": {
+          "total": 2,
+          "passed": 0,
+          "failed": 1,
+          "errors": 1
+        }
+      },
+      "status": "\u274c",
+      "available": true
+    }
+  },
+  "quality_gates": {
+    "production_ready": false,
+    "conversation_ready": false,
+    "evaluation_ready": false,
+    "system_ready": false
+  },
+  "recommendations": [
+    "Conversation tests: 30.8% pass rate. Target: 80%. Focus on: reference_resolution, cross_turn_data_access, context_accumulation",
+    "Evaluation tests: 0.0% pass rate. Target: 95%. Review failed cases and improve domain knowledge.",
+    "System tests: 57.1% pass rate. Target: 90%. Fix error handling and boundary cases."
+  ]
+}

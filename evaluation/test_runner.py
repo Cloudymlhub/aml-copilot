@@ -42,7 +42,7 @@ class AgentEvaluationRunner:
             agents_config: Configuration for agents (uses default if None)
             evaluators: Dictionary of evaluator instances (will create defaults if None)
         """
-        self.agents_config = agents_config or AgentsConfig()
+        self.agents_config = agents_config or settings.get_agents_config()
         self.graph = create_aml_copilot_graph(self.agents_config)
 
         # Evaluators will be injected (or created with defaults)
@@ -264,6 +264,17 @@ class AgentEvaluationRunner:
             evaluation.update(self._basic_evaluation(
                 expected, criteria, compliance_analysis, agent_output
             ))
+
+        # Determine PASS/FAIL status based on results
+        if len(evaluation["fail_reasons"]) > 0:
+            evaluation["status"] = "FAIL"
+        elif evaluation["overall_score"] < criteria.min_passing_score:
+            evaluation["status"] = "FAIL"
+            evaluation["fail_reasons"].append(
+                f"Overall score {evaluation['overall_score']:.1f} below minimum passing score {criteria.min_passing_score}"
+            )
+        else:
+            evaluation["status"] = "PASS"
 
         return evaluation
 
@@ -630,7 +641,8 @@ class AgentEvaluationRunner:
 def run_quick_evaluation(
     dataset_path: str = "evaluation/golden_datasets/structuring_cases.json",
     category: Optional[str] = None,
-    priority: Optional[str] = None
+    priority: Optional[str] = None,
+    min_passing_score: Optional[float] = None
 ) -> EvaluationReport:
     """Quick evaluation run with default configuration.
 
@@ -638,15 +650,61 @@ def run_quick_evaluation(
         dataset_path: Path to golden test cases
         category: Optional category filter
         priority: Optional priority filter
+        min_passing_score: Optional minimum passing score override (0-100).
+                          If provided, overrides the default threshold in test cases.
 
     Returns:
         EvaluationReport
     """
     runner = AgentEvaluationRunner()
-    report = runner.run_evaluation_suite(
-        Path(dataset_path),
-        category=category,
-        priority=priority
-    )
+
+    # If threshold is provided, we need to override it in test cases
+    if min_passing_score is not None:
+        # Load test cases and override threshold
+        test_cases = runner.load_golden_test_cases(
+            Path(dataset_path),
+            category=category,
+            priority=priority
+        )
+        # Override the min_passing_score for all test cases
+        for test_case in test_cases:
+            test_case.evaluation_criteria.min_passing_score = min_passing_score
+
+        # Execute manually
+        print(f"\n{'='*70}")
+        print(f"AML COPILOT - GOLDEN TEST SUITE EVALUATION")
+        print(f"{'='*70}")
+        print(f"Dataset: {dataset_path}")
+        print(f"Min Passing Score: {min_passing_score}/100")
+        if category:
+            print(f"Category Filter: {category}")
+        if priority:
+            print(f"Priority Filter: {priority}")
+        print(f"{'='*70}\n")
+        print(f"Loaded {len(test_cases)} test cases\n")
+
+        results = []
+        for test_case in test_cases:
+            result = runner.execute_test_case(test_case)
+            results.append(result)
+
+        report = runner._generate_report(results, baseline_path=None)
+        runner._print_report_summary(report)
+
+        # Auto-save results
+        from evaluation.config import RESULTS_DIR, EVALUATION_TESTS_LATEST_FILE, get_result_file_path
+        RESULTS_DIR.mkdir(exist_ok=True)
+        results_file = get_result_file_path("evaluation_tests", category, timestamped=True)
+        runner.save_report(report, results_file)
+        latest_file = EVALUATION_TESTS_LATEST_FILE if not category else get_result_file_path("evaluation_tests", category, timestamped=False)
+        runner.save_report(report, latest_file)
+        print(f"📊 Latest results: {latest_file}")
+    else:
+        # Use default behavior
+        report = runner.run_evaluation_suite(
+            Path(dataset_path),
+            category=category,
+            priority=priority
+        )
 
     return report
