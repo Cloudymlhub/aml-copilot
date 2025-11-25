@@ -15,9 +15,8 @@ import uuid
 from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.settings import settings
-from tests.config import (
+from evaluation.config import (
     RESULTS_DIR,
-    SYSTEM_TEST_CASES_DIR,
     CONVERSATION_TESTS_LATEST_FILE,
     get_result_file_path
 )
@@ -512,7 +511,7 @@ def main():
     runner = ConversationTestRunner()
 
     # Path to fixtures
-    fixture_path = SYSTEM_TEST_CASES_DIR / "conversation_cases.json"
+    fixture_path = Path(__file__).parent / "fixtures" / "conversation_cases.json"
 
     if not fixture_path.exists():
         print(f"\n❌ Fixture file not found: {fixture_path}")

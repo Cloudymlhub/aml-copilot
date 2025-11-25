@@ -17,11 +17,11 @@ This framework provides:
 
 ```python
 from pathlib import Path
-from tests.evaluation.test_runner import run_quick_evaluation
+from evaluation.test_runner import run_quick_evaluation
 
 # Run all structuring test cases
 report = run_quick_evaluation(
-    dataset_path="tests/fixtures/golden_datasets/structuring_cases.json"
+    dataset_path="evaluation/golden_datasets/structuring_cases.json"
 )
 
 print(f"Pass Rate: {report.pass_rate:.1%}")
@@ -39,14 +39,14 @@ jupyter notebook notebooks/agent_evaluation_demo.ipynb
 ### 3. Test Specific Cases
 
 ```python
-from tests.evaluation.test_runner import AgentEvaluationRunner
+from evaluation.test_runner import AgentEvaluationRunner
 from pathlib import Path
 
 runner = AgentEvaluationRunner()
 
 # Load test cases
 cases = runner.load_golden_test_cases(
-    Path("tests/fixtures/golden_datasets/structuring_cases.json"),
+    Path("evaluation/golden_datasets/structuring_cases.json"),
     priority="HIGH"  # Filter by priority
 )
 
@@ -289,7 +289,7 @@ jobs:
       - name: Run Golden Test Suite
         run: |
           python -c "
-          from tests.evaluation.test_runner import run_quick_evaluation
+          from evaluation.test_runner import run_quick_evaluation
           report = run_quick_evaluation()
 
           # Quality gates
@@ -338,14 +338,14 @@ Have an AML compliance expert review:
 
 ```bash
 # Add to appropriate category file
-tests/fixtures/golden_datasets/layering_cases.json
+evaluation/golden_datasets/layering_cases.json
 ```
 
 ### 4. Run Test
 
 ```python
 report = run_quick_evaluation(
-    dataset_path="tests/fixtures/golden_datasets/layering_cases.json",
+    dataset_path="evaluation/golden_datasets/layering_cases.json",
     priority="HIGH"
 )
 ```
@@ -442,5 +442,5 @@ result = runner.execute_test_case(test_case)
 
 For questions or issues with the evaluation framework:
 1. Check documentation in `docs/`
-2. Review test case examples in `tests/fixtures/golden_datasets/`
+2. Review test case examples in `evaluation/golden_datasets/`
 3. Examine interactive notebook: `notebooks/agent_evaluation_demo.ipynb`

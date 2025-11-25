@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from tests.config import (
+from evaluation.config import (
     RESULTS_DIR,
     CONVERSATION_TESTS_LATEST_FILE,
     EVALUATION_TESTS_LATEST_FILE,

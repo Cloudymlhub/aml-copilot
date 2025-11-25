@@ -174,16 +174,8 @@ aml_copilot/
 │   ├── alert_tools.py        # Alert data retrieval
 │   ├── ml_output_tools.py    # ✨ NEW: ML model output tools (MOCK_DATA)
 │   └── registry.py           # Tool registry (17 tools total)
-├── evaluation/                # AI agent evaluation framework
-│   ├── golden_datasets/       # Ground truth test cases
-│   ├── evaluators/            # Specialized quality evaluators
-│   ├── conversation/          # Multi-turn conversation tests
-│   ├── system/                # System behavior tests
-│   ├── scorecard/             # Unified test scorecard
-│   ├── test_runner.py         # Main evaluation runner
-│   └── results/               # Evaluation results & reports
-├── tests/                     # Traditional unit/integration tests
-│   └── fixtures/              # Test fixtures and mock data
+├── tests/                     # Test suite
+│   └── fixtures/             # ✨ NEW: Test fixtures
 │       └── ml_model_fixtures.py  # ML output scenarios (MOCK_DATA)
 ├── docs/                      # Documentation
 │   └── PLACEHOLDER_CONTENT_TRACKER.md  # ✨ NEW: Tracks all placeholders
@@ -233,13 +225,13 @@ The AML Copilot uses a comprehensive two-suite testing strategy:
 #### Suite 1: AML Knowledge Tests (Golden Test Framework)
 Tests domain expertise and compliance analysis quality.
 
-**Location**: `evaluation/`
+**Location**: `tests/evaluation/`
 - **Test Runner**: `test_runner.py` - Automated evaluation with specialized evaluators
 - **Evaluators**:
   - `correctness_evaluator.py` - Typology identification, red flag detection, citations
   - `completeness_evaluator.py` - Key facts coverage, recommendation quality
   - `hallucination_detector.py` - Invented information detection
-- **Golden Datasets**: `evaluation/golden_datasets/` - Ground truth test cases
+- **Golden Datasets**: `tests/fixtures/golden_datasets/` - Ground truth test cases
 - **Interactive Notebook**: `notebooks/agent_evaluation_demo.ipynb` - Stakeholder demos
 
 **Quick Start**:
@@ -260,7 +252,7 @@ print(f"Pass Rate: {report.pass_rate:.1%}")
 #### Suite 2: Agent System Tests (In Progress)
 Tests AI assistant behavior (conversation, routing, error handling).
 
-**Location**: `evaluation/system/` (documented, not yet implemented)
+**Location**: `tests/system/` (documented, not yet implemented)
 - Multi-turn conversation tests
 - Out-of-topic handling
 - Coordinator routing accuracy
@@ -270,7 +262,7 @@ Tests AI assistant behavior (conversation, routing, error handling).
 
 **Documentation**:
 - **Testing Strategy**: `docs/TESTING_STRATEGY.md` - Comprehensive testing approach
-- **Framework Guide**: `evaluation/README.md` - Evaluation framework usage
+- **Framework Guide**: `tests/evaluation/README.md` - Evaluation framework usage
 - **Session Summaries**: `docs/SESSION_SUMMARY_2024_*.md` - Implementation details
 
 **Human Review**: Use `/human-review-test` command for expert validation

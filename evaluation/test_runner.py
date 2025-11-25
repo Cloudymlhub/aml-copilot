@@ -11,12 +11,12 @@ from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.agent_config import AgentsConfig
 from config.settings import settings
-from tests.config import (
+from evaluation.config import (
     RESULTS_DIR,
     EVALUATION_TESTS_LATEST_FILE,
     get_result_file_path
 )
-from tests.evaluation.models import (
+from evaluation.models import (
     GoldenTestCase,
     TestResult,
     EvaluationReport,
@@ -628,7 +628,7 @@ class AgentEvaluationRunner:
 
 # Convenience function for quick evaluation
 def run_quick_evaluation(
-    dataset_path: str = "tests/fixtures/golden_datasets/structuring_cases.json",
+    dataset_path: str = "evaluation/golden_datasets/structuring_cases.json",
     category: Optional[str] = None,
     priority: Optional[str] = None
 ) -> EvaluationReport:

@@ -185,10 +185,14 @@ aml_copilot/
 │   └── settings.py      # Includes max_review_attempts
 ├── ui/                  # Streamlit interface
 │   └── streamlit_app.py
-├── tests/               # Comprehensive testing framework
-│   ├── evaluation/      # Golden test framework (AML knowledge)
+├── evaluation/          # AI agent evaluation framework
+│   ├── golden_datasets/ # Ground truth test cases
+│   ├── evaluators/      # Specialized quality evaluators
+│   ├── conversation/    # Multi-turn conversation tests
 │   ├── system/          # System behavior tests
-│   └── fixtures/        # Test data (28+ test cases)
+│   ├── scorecard/       # Unified test scorecard
+│   └── results/         # Evaluation results & reports
+├── tests/               # Traditional unit/integration tests
 ├── notebooks/           # Interactive demos & testing
 └── docs/                # Documentation
 ```
@@ -397,36 +401,54 @@ See `Makefile` for complete command reference.
 
 ## Testing
 
-The AML Copilot includes a **comprehensive, production-ready testing framework** with two complete test suites:
+The AML Copilot separates **AI agent evaluation** from **traditional unit testing**:
 
-### Two-Suite Testing Strategy
+### Evaluation Framework (`evaluation/`)
 
-**1. AML Knowledge Tests** (`tests/evaluation/`) - Golden test framework
+Specialized quality assessment for AI agents:
+
+**1. AML Knowledge Tests** - Golden test framework
 - Tests domain expertise and compliance analysis quality
 - Multi-dimensional scoring: Correctness + Completeness + Hallucination detection
 - Automated evaluation with specialized metrics
 - Interactive demo notebook for stakeholders
 
-**2. System Behavior Tests** (`tests/system/`) - AI assistant capabilities
+**2. System Behavior Tests** - AI assistant capabilities
 - Boundary/off-topic handling (10 test cases)
 - Error handling and graceful degradation (7 test cases)
 - Routing logic validation (8 test cases)
 - Conversation flow and context retention
 
+**3. Unified Scorecard** - Aggregate quality metrics
+- Combines all test types into single dashboard
+- Quality gates for production readiness
+- Drill-down visualization notebook
+
+### Unit Tests (`tests/`)
+
+Traditional software testing:
+- Repository layer tests
+- Service layer tests
+- API endpoint tests
+- Tool integration tests
+
 ### Quick Start
 
-**Run System Tests:**
+**Run Evaluation Tests:**
 ```bash
-python tests/system/run_system_tests.py
+# Conversation tests
+make test-conversations
+
+# AML knowledge tests
+make test-evaluation
+
+# Generate scorecard
+make test-scorecard
 ```
 
-**Run AML Knowledge Tests:**
-```python
-from tests.evaluation.test_runner import run_quick_evaluation
-
-report = run_quick_evaluation()
-print(f"Pass Rate: {report.pass_rate:.1%}")
-print(f"Average Score: {report.avg_overall_score:.1f}/100")
+**Run Unit Tests:**
+```bash
+make test-unit
 ```
 
 **Interactive Demo:**
@@ -462,8 +484,8 @@ jupyter notebook notebooks/agent_evaluation_demo.ipynb
 
 ### Documentation
 
-- **[tests/README.md](tests/README.md)** - Quick start guide
-- **[tests/evaluation/README.md](tests/evaluation/README.md)** - Detailed framework guide
+- **[evaluation/README.md](evaluation/README.md)** - Evaluation framework guide
+- **[tests/README.md](tests/README.md)** - Unit testing guide
 - **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Testing strategy and approach
 
 ## Documentation
@@ -474,9 +496,9 @@ jupyter notebook notebooks/agent_evaluation_demo.ipynb
 - **[Makefile](Makefile)** - Complete command reference with inline documentation
 
 **Testing:**
-- **[tests/README.md](tests/README.md)** - Testing quick start guide
-- **[tests/evaluation/README.md](tests/evaluation/README.md)** - Detailed evaluation framework guide
-- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Two-suite testing strategy
+- **[evaluation/README.md](evaluation/README.md)** - AI agent evaluation framework
+- **[tests/README.md](tests/README.md)** - Unit testing guide
+- **[docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md)** - Testing strategy overview
 
 **Additional Documentation:**
 - **[docs/PLACEHOLDER_CONTENT_TRACKER.md](docs/PLACEHOLDER_CONTENT_TRACKER.md)** - Mock data and placeholder tracking

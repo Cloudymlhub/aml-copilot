@@ -56,10 +56,12 @@ poetry.lock
 .coverage
 htmlcov/
 .tox/
-tests/results/*
-!tests/results/.gitkeep
-!tests/results/*_latest.json
-!tests/results/README.md
+
+# Evaluation results
+evaluation/results/*
+!evaluation/results/.gitkeep
+!evaluation/results/*_latest.json
+!evaluation/results/README.md
 
 # Logs
 *.log

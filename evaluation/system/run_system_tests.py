@@ -10,12 +10,13 @@ from datetime import datetime
 import uuid
 import traceback
 
+from pathlib import Path
+
 from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.settings import settings
-from tests.config import (
+from evaluation.config import (
     RESULTS_DIR,
-    SYSTEM_TEST_CASES_DIR,
     SYSTEM_TESTS_LATEST_FILE,
     get_result_file_path
 )
@@ -59,7 +60,7 @@ def run_boundary_tests():
     print("="*70)
 
     # Load test cases
-    fixture_path = SYSTEM_TEST_CASES_DIR / "boundary_cases.json"
+    fixture_path = Path(__file__).parent / "fixtures" / "boundary_cases.json"
     with open(fixture_path, 'r') as f:
         test_cases = json.load(f)
 
@@ -164,7 +165,7 @@ def run_error_handling_tests():
     print("="*70)
 
     # Load test cases
-    fixture_path = SYSTEM_TEST_CASES_DIR / "error_handling_cases.json"
+    fixture_path = Path(__file__).parent / "fixtures" / "error_handling_cases.json"
     with open(fixture_path, 'r') as f:
         test_cases = json.load(f)
 

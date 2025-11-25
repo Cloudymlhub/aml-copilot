@@ -205,43 +205,43 @@ test: ## Run all tests (conversation + evaluation + unit)
 
 test-conversations: ## Run conversation tests (multi-turn behavior)
 	@echo "$(GREEN)Running conversation tests...$(NC)"
-	$(PYTHON) tests/system/test_conversations.py
+	$(PYTHON) evaluation/conversation/test_conversations.py
 
 test-conversations-category: ## Run conversation tests for specific category (usage: make test-conversations-category CATEGORY=cross_turn_data_access)
 	@echo "$(GREEN)Running conversation tests for category: $(CATEGORY)...$(NC)"
-	$(PYTHON) -c "from tests.system.test_conversations import ConversationTestRunner; from pathlib import Path; runner = ConversationTestRunner(); runner.run_test_suite(Path('tests/fixtures/system_test_cases/conversation_cases.json'), category_filter='$(CATEGORY)')"
+	$(PYTHON) -c "from evaluation.conversation.test_conversations import ConversationTestRunner; from pathlib import Path; runner = ConversationTestRunner(); runner.run_test_suite(Path('evaluation/conversation/fixtures/conversation_cases.json'), category_filter='$(CATEGORY)')"
 
 test-evaluation: ## Run AML knowledge evaluation tests (golden dataset)
 	@echo "$(GREEN)Running AML knowledge evaluation...$(NC)"
-	$(PYTHON) -c "from tests.evaluation.test_runner import run_quick_evaluation; report = run_quick_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
+	$(PYTHON) -c "from evaluation.test_runner import run_quick_evaluation; report = run_quick_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
 
 test-evaluation-full: ## Run full evaluation with detailed report
 	@echo "$(GREEN)Running full AML knowledge evaluation...$(NC)"
-	$(PYTHON) -c "from tests.evaluation.test_runner import run_comprehensive_evaluation; report = run_comprehensive_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
+	$(PYTHON) -c "from evaluation.test_runner import run_comprehensive_evaluation; report = run_comprehensive_evaluation(); print(f'\n✅ Evaluation complete: {report.pass_rate:.1%} pass rate')"
 
 test-unit: ## Run unit tests with pytest
 	@echo "$(GREEN)Running unit tests...$(NC)"
-	$(PYTHON) -m pytest tests/ -v --ignore=tests/system --ignore=tests/evaluation
+	$(PYTHON) -m pytest tests/ -v
 
 test-coverage: ## Run tests with coverage report
 	@echo "$(GREEN)Running tests with coverage...$(NC)"
-	$(PYTHON) -m pytest tests/ --cov=. --cov-report=html --cov-report=term --ignore=tests/system --ignore=tests/evaluation
+	$(PYTHON) -m pytest tests/ --cov=. --cov-report=html --cov-report=term
 
 test-results: ## View latest conversation test results
 	@echo "$(GREEN)Latest Conversation Test Results:$(NC)"
-	@if [ -f tests/results/conversation_tests_latest.json ]; then \
-		cat tests/results/conversation_tests_latest.json | $(PYTHON) -m json.tool | grep -E "(timestamp|total|passed|failed|errors|pass_rate|category_stats)" -A 20; \
+	@if [ -f evaluation/results/conversation_tests_latest.json ]; then \
+		cat evaluation/results/conversation_tests_latest.json | $(PYTHON) -m json.tool | grep -E "(timestamp|total|passed|failed|errors|pass_rate|category_stats)" -A 20; \
 	else \
 		echo "$(RED)No test results found. Run 'make test-conversations' first.$(NC)"; \
 	fi
 
 test-results-history: ## Show history of test runs
 	@echo "$(GREEN)Test Results History:$(NC)"
-	@ls -lth tests/results/conversation_tests_*.json 2>/dev/null | head -10 || echo "$(RED)No test results found$(NC)"
+	@ls -lth evaluation/results/conversation_tests_*.json 2>/dev/null | head -10 || echo "$(RED)No test results found$(NC)"
 
 test-scorecard: ## Generate unified scorecard for all test types
 	@echo "$(GREEN)Generating unified test scorecard...$(NC)"
-	$(PYTHON) tests/scorecard/generate_scorecard.py
+	$(PYTHON) evaluation/scorecard/generate_scorecard.py
 
 lint: ## Run linting checks
 	@echo "$(GREEN)Running linting...$(NC)"
