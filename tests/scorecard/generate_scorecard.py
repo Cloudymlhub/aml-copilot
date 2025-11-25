@@ -10,16 +10,17 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+from tests.config import (
+    RESULTS_DIR,
+    CONVERSATION_TESTS_LATEST_FILE,
+    EVALUATION_TESTS_LATEST_FILE,
+    SYSTEM_TESTS_LATEST_FILE,
+    SCORECARD_LATEST_FILE
+)
 
 
-def load_test_results(results_dir: Path) -> Dict[str, Optional[Dict[str, Any]]]:
+def load_test_results() -> Dict[str, Optional[Dict[str, Any]]]:
     """Load latest results from all test types.
-
-    Args:
-        results_dir: Directory containing test results
 
     Returns:
         Dictionary with results from each test type
@@ -31,21 +32,18 @@ def load_test_results(results_dir: Path) -> Dict[str, Optional[Dict[str, Any]]]:
     }
 
     # Load conversation tests
-    conv_file = results_dir / "conversation_tests_latest.json"
-    if conv_file.exists():
-        with open(conv_file, 'r') as f:
+    if CONVERSATION_TESTS_LATEST_FILE.exists():
+        with open(CONVERSATION_TESTS_LATEST_FILE, 'r') as f:
             results["conversation"] = json.load(f)
 
     # Load evaluation tests
-    eval_file = results_dir / "evaluation_tests_latest.json"
-    if eval_file.exists():
-        with open(eval_file, 'r') as f:
+    if EVALUATION_TESTS_LATEST_FILE.exists():
+        with open(EVALUATION_TESTS_LATEST_FILE, 'r') as f:
             results["evaluation"] = json.load(f)
 
     # Load system tests
-    sys_file = results_dir / "system_tests_latest.json"
-    if sys_file.exists():
-        with open(sys_file, 'r') as f:
+    if SYSTEM_TESTS_LATEST_FILE.exists():
+        with open(SYSTEM_TESTS_LATEST_FILE, 'r') as f:
             results["system"] = json.load(f)
 
     return results
@@ -220,16 +218,14 @@ def print_scorecard(scorecard: Dict[str, Any]):
 def main():
     """Generate and display unified scorecard."""
     # Get results directory
-    results_dir = project_root / "tests" / "results"
-
-    if not results_dir.exists():
-        print(f"❌ Results directory not found: {results_dir}")
+    if not RESULTS_DIR.exists():
+        print(f"❌ Results directory not found: {RESULTS_DIR}")
         print("   Run tests first: make test")
         return 1
 
     # Load test results
     print("Loading test results...")
-    results = load_test_results(results_dir)
+    results = load_test_results()
 
     # Check if any results available
     if not any(results.values()):
@@ -247,11 +243,10 @@ def main():
     print_scorecard(scorecard)
 
     # Save scorecard
-    scorecard_file = results_dir / "test_scorecard_latest.json"
-    with open(scorecard_file, 'w') as f:
+    with open(SCORECARD_LATEST_FILE, 'w') as f:
         json.dump(scorecard, f, indent=2)
 
-    print(f"📊 Scorecard saved to: {scorecard_file}")
+    print(f"📊 Scorecard saved to: {SCORECARD_LATEST_FILE}")
 
     # Exit code based on overall status
     if scorecard["quality_gates"]["production_ready"]:

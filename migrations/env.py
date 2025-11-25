@@ -5,10 +5,6 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 import sys
 from pathlib import Path
-
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from config.settings import settings
 
 # this is the Alembic Config object

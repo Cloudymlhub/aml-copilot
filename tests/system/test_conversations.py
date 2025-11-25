@@ -8,17 +8,19 @@ is sufficient for cross-turn data synthesis.
 import json
 import sys
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
-
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
 
 from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.settings import settings
+from tests.config import (
+    RESULTS_DIR,
+    SYSTEM_TEST_CASES_DIR,
+    CONVERSATION_TESTS_LATEST_FILE,
+    get_result_file_path
+)
 
 
 class ConversationTestResult:
@@ -472,13 +474,12 @@ class ConversationTestRunner:
 
         # Save results to JSON file
         if save_results:
-            results_dir = project_root / "tests" / "results"
-            results_dir.mkdir(exist_ok=True)
+            RESULTS_DIR.mkdir(exist_ok=True)
 
             # Generate filename with timestamp
-            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            category_suffix = f"_{category_filter}" if category_filter else ""
-            results_file = results_dir / f"conversation_tests_{timestamp_str}{category_suffix}.json"
+            results_file = get_result_file_path(
+                "conversation_tests", category_filter, timestamped=True
+            )
 
             with open(results_file, "w") as f:
                 json.dump(summary, f, indent=2)
@@ -486,7 +487,15 @@ class ConversationTestRunner:
             print(f"\n📊 Results saved to: {results_file}")
 
             # Also save as "latest" for easy access
-            latest_file = results_dir / f"conversation_tests_latest{category_suffix}.json"
+            if category_filter:
+                # Categorized latest file
+                latest_file = get_result_file_path(
+                    "conversation_tests", category_filter, timestamped=False
+                )
+            else:
+                # Use predefined constant for non-categorized
+                latest_file = CONVERSATION_TESTS_LATEST_FILE
+            
             with open(latest_file, "w") as f:
                 json.dump(summary, f, indent=2)
             print(f"📊 Latest results: {latest_file}")
@@ -503,9 +512,7 @@ def main():
     runner = ConversationTestRunner()
 
     # Path to fixtures
-    fixture_path = (
-        project_root / "tests" / "fixtures" / "system_test_cases" / "conversation_cases.json"
-    )
+    fixture_path = SYSTEM_TEST_CASES_DIR / "conversation_cases.json"
 
     if not fixture_path.exists():
         print(f"\n❌ Fixture file not found: {fixture_path}")

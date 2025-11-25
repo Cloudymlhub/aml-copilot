@@ -7,13 +7,9 @@ This script shows how to:
 4. Generate reports
 """
 
-from pathlib import Path
 import sys
-
-# Add project root to path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
+from pathlib import Path
+from tests.config import GOLDEN_DATASETS_DIR, EVALUATION_REPORTS_DIR
 from tests.evaluation.test_runner import AgentEvaluationRunner
 from tests.evaluation.evaluators import (
     CorrectnessEvaluator,
@@ -31,7 +27,7 @@ def example_1_quick_evaluation():
     runner = AgentEvaluationRunner()
 
     # Run evaluation on structuring cases
-    dataset_path = project_root / "tests" / "fixtures" / "golden_datasets" / "structuring_cases.json"
+    dataset_path = GOLDEN_DATASETS_DIR / "structuring_cases.json"
 
     report = runner.run_evaluation_suite(dataset_path)
 
@@ -51,7 +47,7 @@ def example_2_single_test_detailed():
     runner = AgentEvaluationRunner()
 
     # Load test cases
-    dataset_path = project_root / "tests" / "fixtures" / "golden_datasets" / "structuring_cases.json"
+    dataset_path = GOLDEN_DATASETS_DIR / "structuring_cases.json"
     test_cases = runner.load_golden_test_cases(dataset_path)
 
     # Run first test case
@@ -192,7 +188,7 @@ def example_4_filter_and_run():
 
     runner = AgentEvaluationRunner()
 
-    dataset_path = project_root / "tests" / "fixtures" / "golden_datasets" / "structuring_cases.json"
+    dataset_path = GOLDEN_DATASETS_DIR / "structuring_cases.json"
 
     # Load only HIGH priority cases
     high_priority_cases = runner.load_golden_test_cases(
@@ -224,13 +220,13 @@ def example_5_save_report():
 
     runner = AgentEvaluationRunner()
 
-    dataset_path = project_root / "tests" / "fixtures" / "golden_datasets" / "structuring_cases.json"
+    dataset_path = GOLDEN_DATASETS_DIR / "structuring_cases.json"
 
     # Run evaluation
     report = runner.run_evaluation_suite(dataset_path)
 
     # Save report
-    output_path = project_root / "tests" / "evaluation" / "reports" / f"{report.report_id}.json"
+    output_path = EVALUATION_REPORTS_DIR / f"{report.report_id}.json"
     runner.save_report(report, output_path)
 
     print(f"\n✅ Report saved to: {output_path}")

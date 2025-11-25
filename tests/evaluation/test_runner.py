@@ -11,6 +11,11 @@ from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.agent_config import AgentsConfig
 from config.settings import settings
+from tests.config import (
+    RESULTS_DIR,
+    EVALUATION_TESTS_LATEST_FILE,
+    get_result_file_path
+)
 from tests.evaluation.models import (
     GoldenTestCase,
     TestResult,
@@ -462,19 +467,24 @@ class AgentEvaluationRunner:
 
         # Auto-save results (similar to conversation tests)
         if save_results:
-            # Get project root
-            project_root = Path(__file__).parent.parent.parent
-            results_dir = project_root / "tests" / "results"
-            results_dir.mkdir(exist_ok=True)
+            RESULTS_DIR.mkdir(exist_ok=True)
 
             # Save timestamped file
-            timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            category_suffix = f"_{category}" if category else ""
-            results_file = results_dir / f"evaluation_tests_{timestamp_str}{category_suffix}.json"
+            results_file = get_result_file_path(
+                "evaluation_tests", category, timestamped=True
+            )
             self.save_report(report, results_file)
 
             # Save as "latest" for easy access
-            latest_file = results_dir / f"evaluation_tests_latest{category_suffix}.json"
+            if category:
+                # Categorized latest file
+                latest_file = get_result_file_path(
+                    "evaluation_tests", category, timestamped=False
+                )
+            else:
+                # Use predefined constant for non-categorized
+                latest_file = EVALUATION_TESTS_LATEST_FILE
+            
             self.save_report(report, latest_file)
             print(f"📊 Latest results: {latest_file}")
 

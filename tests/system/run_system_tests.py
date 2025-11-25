@@ -5,19 +5,20 @@ This script runs system tests and reports results.
 
 import json
 import sys
-from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime
 import uuid
 import traceback
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 from agents.graph import create_aml_copilot_graph
 from agents.state import AMLCopilotState
 from config.settings import settings
+from tests.config import (
+    RESULTS_DIR,
+    SYSTEM_TEST_CASES_DIR,
+    SYSTEM_TESTS_LATEST_FILE,
+    get_result_file_path
+)
 
 
 def create_test_state(user_query: str, context: Dict[str, Any] = None) -> AMLCopilotState:
@@ -58,7 +59,7 @@ def run_boundary_tests():
     print("="*70)
 
     # Load test cases
-    fixture_path = project_root / "tests" / "fixtures" / "system_test_cases" / "boundary_cases.json"
+    fixture_path = SYSTEM_TEST_CASES_DIR / "boundary_cases.json"
     with open(fixture_path, 'r') as f:
         test_cases = json.load(f)
 
@@ -163,7 +164,7 @@ def run_error_handling_tests():
     print("="*70)
 
     # Load test cases
-    fixture_path = project_root / "tests" / "fixtures" / "system_test_cases" / "error_handling_cases.json"
+    fixture_path = SYSTEM_TEST_CASES_DIR / "error_handling_cases.json"
     with open(fixture_path, 'r') as f:
         test_cases = json.load(f)
 
@@ -281,10 +282,7 @@ def main():
         print(f"Errors: {total_errors}")
 
         # Save results to JSON
-        results_dir = project_root / "tests" / "results"
-        results_dir.mkdir(exist_ok=True)
-
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        RESULTS_DIR.mkdir(exist_ok=True)
 
         results = {
             "timestamp": datetime.now().isoformat(),
@@ -310,17 +308,16 @@ def main():
         }
 
         # Save timestamped file
-        results_file = results_dir / f"system_tests_{timestamp_str}.json"
+        results_file = get_result_file_path("system_tests", timestamped=True)
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
 
         # Save as "latest"
-        latest_file = results_dir / "system_tests_latest.json"
-        with open(latest_file, 'w') as f:
+        with open(SYSTEM_TESTS_LATEST_FILE, 'w') as f:
             json.dump(results, f, indent=2)
 
         print(f"\n📊 Results saved to: {results_file}")
-        print(f"📊 Latest results: {latest_file}")
+        print(f"📊 Latest results: {SYSTEM_TESTS_LATEST_FILE}")
 
         if total_failed == 0 and total_errors == 0:
             print(f"\n✅ All system tests passed!")
