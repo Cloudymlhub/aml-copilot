@@ -53,6 +53,7 @@ class IntentMappingAgent(BaseAgent):
         # Note: This does NOT execute tools, only enables the LLM to see their schemas
         self.llm_with_tools = self.llm.bind_tools(self.available_tools)
 
+
     def __call__(self, state: AMLCopilotState) -> AgentResponse:
         """Map user query to structured intent using function calling.
 
@@ -110,6 +111,7 @@ class IntentMappingAgent(BaseAgent):
                     for tool_call in response.tool_calls
                 ]
 
+                
                 # Validate tool names (should always pass with bind_tools, but safety check)
                 for tool_spec in tools_to_use:
                     if tool_spec["tool"] not in self.valid_tool_names:

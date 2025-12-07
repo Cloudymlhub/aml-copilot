@@ -1,22 +1,22 @@
 {
-  "generated_at": "2025-11-25T23:28:48.272968",
+  "generated_at": "2025-11-26T15:00:00.222688",
   "overall": {
-    "total_tests": 20,
-    "total_passed": 8,
-    "overall_pass_rate": 0.4,
+    "total_tests": 23,
+    "total_passed": 7,
+    "overall_pass_rate": 0.30434782608695654,
     "status": "\u274c CRITICAL"
   },
   "by_test_type": {
     "conversation_tests": {
       "total": 13,
-      "passed": 4,
-      "failed": 9,
-      "pass_rate": 0.3076923076923077,
+      "passed": 3,
+      "failed": 10,
+      "pass_rate": 0.23076923076923078,
       "category_stats": {
         "reference_resolution": {
           "total": 5,
-          "passed": 1,
-          "failed": 4,
+          "passed": 0,
+          "failed": 5,
           "errors": 0
         },
         "cross_turn_data_access": {
@@ -36,13 +36,13 @@
       "available": true
     },
     "evaluation_tests": {
-      "total": 0,
+      "total": 3,
       "passed": 0,
-      "failed": 0,
+      "failed": 3,
       "pass_rate": 0.0,
-      "avg_score": 0.0,
+      "avg_score": 20.0,
       "status": "\u274c",
-      "available": false
+      "available": true
     },
     "system_tests": {
       "total": 7,
@@ -74,7 +74,7 @@
     "system_ready": false
   },
   "recommendations": [
-    "Conversation tests: 30.8% pass rate. Target: 80%. Focus on: reference_resolution, cross_turn_data_access, context_accumulation",
+    "Conversation tests: 23.1% pass rate. Target: 80%. Focus on: reference_resolution, cross_turn_data_access, context_accumulation",
     "Evaluation tests: 0.0% pass rate. Target: 95%. Review failed cases and improve domain knowledge.",
     "System tests: 57.1% pass rate. Target: 90%. Fix error handling and boundary cases."
   ]

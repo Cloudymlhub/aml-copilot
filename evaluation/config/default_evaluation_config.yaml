@@ -1,0 +1,110 @@
+# Default Evaluation Configuration
+# ================================
+#
+# This file defines the evaluation framework for AML Copilot tests.
+#
+# TWO-LEVEL WEIGHTING SYSTEM:
+# 1. Test Type Weights: How much each test type contributes to final scorecard score (must sum to 1.0)
+# 2. Evaluator Weights: How much each evaluator contributes within its test type (must sum to 1.0)
+#
+# FINAL SCORE CALCULATION:
+# final_score = (golden_score * 0.60) + (conversation_score * 0.30) + (system_score * 0.10)
+#
+# Where:
+# golden_score = (correctness * 0.40) + (completeness * 0.40) + (hallucination * 0.20)
+
+version: "1.0"
+
+test_types:
+  # ============================================================================
+  # Golden Tests: AML Business Knowledge
+  # ============================================================================
+  golden:
+    test_type: "golden"
+    name: "AML Business Knowledge Tests"
+    description: "Single-turn tests evaluating AML domain expertise, typology identification, and regulatory knowledge"
+    weight: 0.60  # 60% of final scorecard score
+
+    evaluators:
+      # Correctness: Typology identification, red flag detection, citations
+      - name: correctness
+        weight: 0.40  # 40% of golden test score
+        threshold: 0.70  # Must score >= 70% to pass
+        config_path: evaluation/config/evaluators/correctness_config.yaml
+        enabled: true
+
+      # Completeness: Key facts coverage, recommendation quality
+      - name: completeness
+        weight: 0.40  # 40% of golden test score
+        threshold: 0.75  # Must score >= 75% to pass
+        config_path: evaluation/config/evaluators/completeness_config.yaml
+        enabled: true
+
+      # Hallucination: Invented information detection
+      - name: hallucination
+        weight: 0.20  # 20% of golden test score
+        threshold: 0.80  # Must score >= 80% to pass (1.0 = no hallucinations)
+        config_path: evaluation/config/evaluators/hallucination_config.yaml
+        enabled: true
+
+    # Evaluator weights sum to 1.0 ✓ (0.40 + 0.40 + 0.20 = 1.0)
+
+  # ============================================================================
+  # Conversation Tests: Multi-Turn Interactions
+  # ============================================================================
+  conversation:
+    test_type: "conversation"
+    name: "Multi-Turn Conversation Tests"
+    description: "Tests for message history, reference resolution, and cross-turn data synthesis"
+    weight: 0.30  # 30% of final scorecard score
+
+    evaluators: []  # No specialized evaluators - uses turn-based validation
+
+    # Conversation tests validate:
+    # - Reference resolution ("their", "that customer")
+    # - Cross-turn synthesis (aggregating data across turns)
+    # - State persistence (context maintained across turns)
+
+  # ============================================================================
+  # System Tests: Boundary and Error Handling
+  # ============================================================================
+  system:
+    test_type: "system"
+    name: "System Boundary Tests"
+    description: "Error handling, off-topic detection, and graceful degradation"
+    weight: 0.10  # 10% of final scorecard score
+
+    evaluators: []  # No specialized evaluators - simple pass/fail validation
+
+    # System tests validate:
+    # - Off-topic queries handled gracefully
+    # - Missing data handled with helpful messages
+    # - Error states don't crash system
+
+# Test type weights sum to 1.0 ✓ (0.60 + 0.30 + 0.10 = 1.0)
+
+# ============================================================================
+# Configuration Notes
+# ============================================================================
+#
+# To customize this configuration:
+# 1. Copy this file to evaluation/config/evaluation_config.yaml
+# 2. Adjust weights as needed (ensure they sum to 1.0 at each level)
+# 3. Pass custom path to UnifiedTestRunner:
+#    runner = UnifiedTestRunner(
+#        evaluation_config=EvaluationConfig.from_yaml(Path("custom_config.yaml"))
+#    )
+#
+# Evaluator Config Options:
+# - config_path: Reference external YAML file (recommended for complex configs)
+# - config: Inline configuration dict (good for simple configs)
+# - Both are mutually exclusive (will raise ValidationError if both specified)
+#
+# Example inline config:
+#   - name: completeness
+#     weight: 0.40
+#     threshold: 0.75
+#     config:
+#       key_facts_weight: 0.50
+#       recommendations_weight: 0.30
+#       coverage_weight: 0.20

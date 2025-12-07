@@ -1,0 +1,32 @@
+# Completeness Evaluator Configuration
+# ======================================
+#
+# Evaluates thoroughness of AML analysis including:
+# - Key facts coverage (did agent mention all important facts?)
+# - Recommendation quality (actionable next steps provided?)
+# - Depth of analysis (superficial vs comprehensive)
+
+evaluator_type: completeness
+
+# Key facts coverage: Did the agent mention all critical information?
+key_facts:
+  weight_in_completeness: 0.50  # 50% of completeness score
+  min_coverage_rate: 0.75        # Must cover at least 75% of expected key facts
+  penalize_missing_critical: true # Extra penalty for missing critical facts
+  reward_additional_insights: true # Bonus points for relevant facts not in expected output
+
+# Recommendations: Are actionable next steps provided?
+recommendations:
+  weight_in_completeness: 0.30  # 30% of completeness score
+  require_specific: true         # "Investigate further" is too vague
+  require_prioritized: false     # Nice to have but not required
+  min_recommendation_count: 1    # At least one recommendation required
+
+# Analysis depth: Is the analysis superficial or comprehensive?
+analysis_depth:
+  weight_in_completeness: 0.20  # 20% of completeness score
+  check_reasoning: true          # Should explain WHY, not just WHAT
+  check_context: true            # Should consider broader context
+  penalize_list_only: true       # Just listing facts = incomplete
+
+# Weights sum to 1.0 ✓ (0.50 + 0.30 + 0.20 = 1.0)

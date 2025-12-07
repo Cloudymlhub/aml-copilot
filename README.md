@@ -419,7 +419,10 @@ Specialized quality assessment for AI agents:
 - Routing logic validation (8 test cases)
 - Conversation flow and context retention
 
-**3. Unified Scorecard** - Aggregate quality metrics
+**3. Conversation Tests** - Multi-turn behavior and context retention
+
+
+**4. Unified Scorecard** - Aggregate quality metrics
 - Combines all test types into single dashboard
 - Quality gates for production readiness
 - Drill-down visualization notebook

@@ -1,0 +1,58 @@
+# Hallucination Detector Configuration
+# ======================================
+#
+# Detects invented or unsupported information in agent outputs.
+# Score: 1.0 = no hallucinations, 0.0 = severe hallucinations
+#
+# This is critical for AML compliance - false information can lead to:
+# - Incorrect SAR filings
+# - Missed suspicious activity
+# - Regulatory violations
+
+evaluator_type: hallucination
+
+# Data hallucination: Invented customer/transaction data
+data_hallucination:
+  weight_in_hallucination: 0.40  # 40% of hallucination score
+  check_customer_info: true       # Verify customer names, CIFs, risk ratings
+  check_transaction_amounts: true # Verify dollar amounts, dates
+  check_account_numbers: true     # Verify account identifiers
+  strict_mode: true               # Any data mismatch = hallucination
+
+# Regulation hallucination: Invented or misquoted regulations
+regulation_hallucination:
+  weight_in_hallucination: 0.30  # 30% of hallucination score
+  verify_cfr_sections: true       # Check CFR citations are real
+  verify_thresholds: true         # Check dollar thresholds are correct
+  verify_deadlines: true          # Check filing deadlines are correct
+  allow_paraphrasing: true        # OK to paraphrase, but must be accurate
+
+# Typology hallucination: Invented red flags or typologies
+typology_hallucination:
+  weight_in_hallucination: 0.20  # 20% of hallucination score
+  check_red_flag_accuracy: true   # Red flags must be real indicators
+  check_typology_validity: true   # Typologies must be recognized patterns
+  allow_reasonable_inference: true # OK to infer likely typologies from patterns
+
+# Context hallucination: Fabricated context or assumptions
+context_hallucination:
+  weight_in_hallucination: 0.10  # 10% of hallucination score
+  check_unwarranted_assumptions: true # Flag assumptions not supported by data
+  check_speculation: true          # Flag speculation presented as fact
+  require_hedging: false           # Don't require "possibly" or "may be"
+
+# Weights sum to 1.0 ✓ (0.40 + 0.30 + 0.20 + 0.10 = 1.0)
+
+# Severity levels (for reporting)
+severity:
+  critical:  # Data mismatches, false regulations
+    - customer_info
+    - transaction_amounts
+    - cfr_sections
+    - thresholds
+  high:      # Incorrect typologies, unwarranted conclusions
+    - typology_validity
+    - unwarranted_assumptions
+  medium:    # Minor context issues
+    - speculation
+    - red_flag_details

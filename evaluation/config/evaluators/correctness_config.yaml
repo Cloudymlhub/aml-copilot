@@ -1,0 +1,39 @@
+# Correctness Evaluator Configuration
+# =====================================
+#
+# Evaluates accuracy of AML analysis including:
+# - Typology identification (structuring, layering, etc.)
+# - Red flag detection
+# - Risk assessment alignment
+# - Regulatory citations
+
+evaluator_type: correctness
+
+# Typology scoring: How well did the agent identify money laundering typologies?
+typologies:
+  weight_in_correctness: 0.40  # 40% of correctness score
+  require_exact_match: false    # Allow semantic matches (e.g., "structuring" vs "smurfing")
+  allow_additional: true        # OK to identify extra typologies (false positives less critical)
+  min_f1_score: 0.70           # Minimum F1 score (balances precision and recall)
+
+# Red flag detection: Did the agent catch key suspicious activity indicators?
+red_flags:
+  weight_in_correctness: 0.30  # 30% of correctness score
+  min_detection_rate: 0.70     # Must detect at least 70% of expected red flags
+  allow_additional: true        # OK to mention extra red flags
+  critical_flags_required: true # Critical flags must be detected (even if others missed)
+
+# Risk assessment: Did the agent reach the correct risk conclusion?
+risk_assessment:
+  weight_in_correctness: 0.20  # 20% of correctness score
+  require_exact_match: true     # Risk level must match exactly (HIGH, MEDIUM, LOW)
+  accept_synonyms: true         # Allow "ELEVATED" for "HIGH", "MODERATE" for "MEDIUM"
+
+# Regulatory citations: Are citations accurate and relevant?
+citations:
+  weight_in_correctness: 0.10  # 10% of correctness score
+  require_valid_format: true    # CFR sections, BSA requirements must be formatted correctly
+  check_relevance: true         # Citations must be relevant to the analysis
+  allow_missing: false          # Missing citations = points deducted
+
+# Weights sum to 1.0 ✓ (0.40 + 0.30 + 0.20 + 0.10 = 1.0)

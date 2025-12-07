@@ -1,4 +1,38 @@
-"""LangGraph state schema for AML Copilot multi-agent system."""
+"""LangGraph state schema for AML Copilot multi-agent system.
+
+DESIGN DECISION: TypedDict vs Pydantic BaseModel
+=================================================
+
+This module uses TypedDict instead of Pydantic BaseModel for state management.
+
+Rationale:
+----------
+1. **LangGraph Compatibility**: LangGraph works natively with plain dictionaries.
+   TypedDict provides type hints without runtime overhead or serialization complexity.
+
+2. **Partial Updates**: Agents return partial state updates via AgentResponse (total=False).
+   This pattern is natural with dictionaries but awkward with Pydantic models.
+
+3. **Performance**: No serialization/deserialization overhead. State updates are
+   simple dictionary merges.
+
+4. **Flexibility**: LangGraph's state management expects mutable dictionaries.
+   Pydantic models are designed for immutability and validation.
+
+Contrast with Evaluation Framework:
+------------------------------------
+The evaluation framework (evaluation/core/models.py) DOES use Pydantic BaseModel
+because:
+- Test cases benefit from validation at load time
+- Results benefit from methods (is_successful(), to_scorecard_format())
+- No LangGraph integration required
+- Evaluation data is serialized to JSON for reporting
+
+Summary:
+--------
+TypedDict for agent state (runtime efficiency, LangGraph native)
+Pydantic for test data (validation, methods, reporting)
+"""
 
 from typing import TypedDict, List, Dict, Any, Optional, Literal
 from datetime import datetime
@@ -175,8 +209,15 @@ class AgentResponse(TypedDict, total=False):
     
     # Data Retrieval
     retrieved_data: Optional[DataRetrievalResult]
-    
+    #TODO 
+    # used_retrieved_data: Optional[DataRetrievalResult] = ["A", "B"]
+    # # Keep top n of them in a queue limited to a config set N last used data
+    # all_used_retrieved_data: Optional[DataRetrievalResult] = []
     # Compliance Analysis
+
+    # Have a history compacter, an agent that summarizes after the chat reaches max length
+    # of chat, and store the summary in the state for future reference.
+
     compliance_analysis: Optional[ComplianceAnalysis]
 
     # ML Model Output
