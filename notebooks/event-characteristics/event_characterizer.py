@@ -256,6 +256,54 @@ def get_driving_transactions(event: pd.DataFrame, shifts: Dict, top_n: int = 5) 
         .copy()
     )
     
+    # =========================================================================
+    # COUNTERPARTY BREAKDOWN - amounts sent/received per counterparty
+    # =========================================================================
+    
+    cp_summary = event.groupby(['counterparty_id', 'is_credit']).agg(
+        total_amount=('amount', 'sum'),
+        txn_count=('txn_id', 'count'),
+        first_txn=('tran_date', 'min'),
+        last_txn=('tran_date', 'max')
+    ).reset_index()
+    
+    # Pivot to get credits and debits side by side
+    cp_credits = cp_summary[cp_summary['is_credit'] == True].copy()
+    cp_credits = cp_credits.rename(columns={
+        'total_amount': 'credit_amount',
+        'txn_count': 'credit_count'
+    })[['counterparty_id', 'credit_amount', 'credit_count']]
+    
+    cp_debits = cp_summary[cp_summary['is_credit'] == False].copy()
+    cp_debits = cp_debits.rename(columns={
+        'total_amount': 'debit_amount',
+        'txn_count': 'debit_count'
+    })[['counterparty_id', 'debit_amount', 'debit_count']]
+    
+    # Merge credits and debits
+    cp_breakdown = pd.merge(cp_credits, cp_debits, on='counterparty_id', how='outer').fillna(0)
+    
+    # Calculate net flow and total volume
+    cp_breakdown['net_flow'] = cp_breakdown['credit_amount'] - cp_breakdown['debit_amount']
+    cp_breakdown['total_volume'] = cp_breakdown['credit_amount'] + cp_breakdown['debit_amount']
+    cp_breakdown['total_txns'] = cp_breakdown['credit_count'] + cp_breakdown['debit_count']
+    
+    # Flag if new counterparty
+    cp_breakdown['is_new'] = cp_breakdown['counterparty_id'].isin(new_cps)
+    
+    # Sort by total volume
+    cp_breakdown = cp_breakdown.sort_values('total_volume', ascending=False)
+    
+    # Reorder columns for readability
+    cp_breakdown = cp_breakdown[[
+        'counterparty_id', 'is_new',
+        'credit_amount', 'credit_count',
+        'debit_amount', 'debit_count',
+        'net_flow', 'total_volume', 'total_txns'
+    ]]
+    
+    drivers['counterparty_breakdown'] = cp_breakdown
+    
     return drivers
 
 
@@ -410,6 +458,22 @@ def format_l2_report(window: EventWindow, shifts: Dict, flags: List[Dict], drive
         lines.append("\nTransactions with NEW Counterparties:")
         lines.append(drivers['new_counterparty_transactions'].to_string(index=False))
     
+    # Counterparty breakdown
+    if 'counterparty_breakdown' in drivers and len(drivers['counterparty_breakdown']) > 0:
+        lines.append("\n" + "-" * 60)
+        lines.append("COUNTERPARTY BREAKDOWN")
+        lines.append("-" * 60)
+        
+        cp_df = drivers['counterparty_breakdown'].copy()
+        
+        # Format amounts for display
+        for col in ['credit_amount', 'debit_amount', 'net_flow', 'total_volume']:
+            cp_df[col] = cp_df[col].apply(lambda x: f"${x:,.0f}")
+        
+        cp_df['is_new'] = cp_df['is_new'].apply(lambda x: '* NEW' if x else '')
+        
+        lines.append(cp_df.to_string(index=False))
+    
     lines.append("\n" + "=" * 60)
     
     return "\n".join(lines)
@@ -481,12 +545,13 @@ def run_batch_characterization(
         verbose: Print progress
     
     Returns:
-        Dict with results, summary_df, flags_df, and failed events
+        Dict with results, summary_df, flags_df, drivers_df, counterparty_df, and failed events
     """
     
     results = []
     all_flags = []
     all_drivers = []
+    all_counterparties = []
     failed = []
     
     total = len(events)
@@ -551,6 +616,8 @@ def run_batch_characterization(
             
             # Flatten top drivers
             for driver_type, driver_df in result['drivers'].items():
+                if driver_type == 'counterparty_breakdown':
+                    continue  # Handle separately
                 if len(driver_df) > 0:
                     for _, txn_row in driver_df.head(5).iterrows():
                         driver_row = {
@@ -565,6 +632,13 @@ def run_batch_characterization(
                             'is_credit': txn_row.get('is_credit'),
                         }
                         all_drivers.append(driver_row)
+            
+            # Flatten counterparty breakdown
+            if 'counterparty_breakdown' in result['drivers']:
+                cp_df = result['drivers']['counterparty_breakdown'].copy()
+                cp_df['user_id'] = user_id
+                cp_df['event_date'] = event_date
+                all_counterparties.append(cp_df)
                         
         except Exception as e:
             failed.append({
@@ -583,11 +657,13 @@ def run_batch_characterization(
     summary_df = pd.DataFrame(results)
     flags_df = pd.DataFrame(all_flags)
     drivers_df = pd.DataFrame(all_drivers)
+    counterparty_df = pd.concat(all_counterparties, ignore_index=True) if all_counterparties else pd.DataFrame()
     
     return {
         'summary_df': summary_df,
         'flags_df': flags_df,
         'drivers_df': drivers_df,
+        'counterparty_df': counterparty_df,
         'failed': failed,
     }
 
@@ -604,6 +680,7 @@ def export_to_excel(
         - Summary: One row per event with all metrics
         - Flags: All flags with supporting txn IDs
         - Drivers: Key transactions per event
+        - Counterparties: Breakdown of amounts per counterparty per event
         - Stats: Aggregate statistics (optional)
         - Failed: Events that failed processing
     """
@@ -629,6 +706,17 @@ def export_to_excel(
         drivers_df = batch_results['drivers_df']
         if len(drivers_df) > 0:
             drivers_df.to_excel(writer, sheet_name='Key_Transactions', index=False)
+        
+        # Counterparty breakdown sheet
+        counterparty_df = batch_results.get('counterparty_df', pd.DataFrame())
+        if len(counterparty_df) > 0:
+            # Reorder columns for readability
+            col_order = ['user_id', 'event_date', 'counterparty_id', 'is_new',
+                        'credit_amount', 'credit_count', 'debit_amount', 'debit_count',
+                        'net_flow', 'total_volume', 'total_txns']
+            col_order = [c for c in col_order if c in counterparty_df.columns]
+            counterparty_df = counterparty_df[col_order]
+            counterparty_df.to_excel(writer, sheet_name='Counterparties', index=False)
         
         # Stats sheet
         if include_stats and len(summary_df) > 0:
@@ -770,11 +858,18 @@ def generate_l2_queue(
         drivers_df = drivers_df[drivers_df['event_key'].isin(priority_events)]
         drivers_df = drivers_df.drop(columns=['event_key'])
     
+    counterparty_df = batch_results.get('counterparty_df', pd.DataFrame()).copy()
+    if len(counterparty_df) > 0:
+        counterparty_df['event_key'] = list(zip(counterparty_df['user_id'], counterparty_df['event_date'].astype(str)))
+        counterparty_df = counterparty_df[counterparty_df['event_key'].isin(priority_events)]
+        counterparty_df = counterparty_df.drop(columns=['event_key'])
+    
     # Repackage for export
     prioritized_results = {
         'summary_df': prioritized,
         'flags_df': flags_df,
         'drivers_df': drivers_df,
+        'counterparty_df': counterparty_df,
         'failed': batch_results['failed'],
     }
     
