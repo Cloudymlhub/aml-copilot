@@ -108,22 +108,56 @@ def counterparty_breakdown(
     event: pd.DataFrame,
     baseline: pd.DataFrame,
     shifts: Dict,
+    id_col: str = 'counterparty_id',
     account_col: str = 'counterparty_account',
-    id_col: str = 'counterparty_id'
 ) -> pd.DataFrame:
     """
     Volume breakdown per counterparty: credits, debits, net flow.
     
-    Shows bank account when available, highlights internal ID when internal.
+    Handles both:
+    - Internal transactions: uses counterparty_id
+    - External transactions: uses counterparty_account
     """
     
     if len(event) == 0:
         return pd.DataFrame()
     
-    new_cps = shifts.get('new_counterparty_ids', set())
+    event = event.copy()
     
-    # Aggregate by counterparty and direction
-    cp_summary = event.groupby([id_col, 'is_credit']).agg(
+    # Create unified counterparty identifier
+    # Use account if available, otherwise use id (internal)
+    if account_col in event.columns:
+        event['_cp_key'] = event[account_col].fillna('')
+        has_id = id_col in event.columns
+        if has_id:
+            # Where account is empty, use id
+            mask = event['_cp_key'] == ''
+            event.loc[mask, '_cp_key'] = event.loc[mask, id_col].fillna('UNKNOWN')
+            # Flag internal transactions
+            event['is_internal'] = event[account_col].isna() | (event[account_col] == '')
+        else:
+            event['is_internal'] = False
+    elif id_col in event.columns:
+        event['_cp_key'] = event[id_col].fillna('UNKNOWN')
+        event['is_internal'] = True
+    else:
+        return pd.DataFrame()
+    
+    # Get baseline counterparties for is_new flag
+    baseline_cps = set()
+    if len(baseline) > 0:
+        baseline = baseline.copy()
+        if account_col in baseline.columns:
+            baseline['_cp_key'] = baseline[account_col].fillna('')
+            if id_col in baseline.columns:
+                mask = baseline['_cp_key'] == ''
+                baseline.loc[mask, '_cp_key'] = baseline.loc[mask, id_col].fillna('UNKNOWN')
+        elif id_col in baseline.columns:
+            baseline['_cp_key'] = baseline[id_col].fillna('UNKNOWN')
+        baseline_cps = set(baseline['_cp_key'].unique())
+    
+    # Aggregate by unified key and direction
+    cp_summary = event.groupby(['_cp_key', 'is_credit']).agg(
         total_amount=('amount', 'sum'),
         txn_count=('txn_id', 'count'),
     ).reset_index()
@@ -133,49 +167,43 @@ def counterparty_breakdown(
     cp_credits = cp_credits.rename(columns={
         'total_amount': 'credit_amount',
         'txn_count': 'credit_count'
-    })[[id_col, 'credit_amount', 'credit_count']]
+    })[['_cp_key', 'credit_amount', 'credit_count']]
     
     cp_debits = cp_summary[cp_summary['is_credit'] == False].copy()
     cp_debits = cp_debits.rename(columns={
         'total_amount': 'debit_amount',
         'txn_count': 'debit_count'
-    })[[id_col, 'debit_amount', 'debit_count']]
+    })[['_cp_key', 'debit_amount', 'debit_count']]
     
     # Merge
-    cp_breakdown = pd.merge(cp_credits, cp_debits, on=id_col, how='outer').fillna(0)
+    cp_breakdown = pd.merge(cp_credits, cp_debits, on='_cp_key', how='outer').fillna(0)
     
     # Calculate derived metrics
     cp_breakdown['net_flow'] = cp_breakdown['credit_amount'] - cp_breakdown['debit_amount']
     cp_breakdown['total_volume'] = cp_breakdown['credit_amount'] + cp_breakdown['debit_amount']
-    cp_breakdown['total_txns'] = cp_breakdown['credit_count'] + cp_breakdown['debit_count']
+    cp_breakdown['total_txns'] = (cp_breakdown['credit_count'] + cp_breakdown['debit_count']).astype(int)
     
     # Flag new counterparties
-    cp_breakdown['is_new'] = cp_breakdown[id_col].isin(new_cps)
+    cp_breakdown['is_new'] = ~cp_breakdown['_cp_key'].isin(baseline_cps)
     
-    # Add account info if available
-    if account_col in event.columns:
-        # Get first non-null account per counterparty
-        account_map = event.dropna(subset=[account_col]).groupby(id_col)[account_col].first()
-        cp_breakdown['account'] = cp_breakdown[id_col].map(account_map)
-        
-        # Check if internal (no account = internal)
-        cp_breakdown['is_internal'] = cp_breakdown['account'].isna()
-        
-        # Display column: show account or ID if internal
-        cp_breakdown['display_id'] = cp_breakdown.apply(
-            lambda r: f"[INT] {r[id_col]}" if r['is_internal'] else r['account'],
-            axis=1
-        )
-    else:
-        cp_breakdown['display_id'] = cp_breakdown[id_col]
-        cp_breakdown['is_internal'] = False
+    # Flag internal (get from first occurrence in event)
+    internal_map = event.groupby('_cp_key')['is_internal'].first()
+    cp_breakdown['is_internal'] = cp_breakdown['_cp_key'].map(internal_map)
+    
+    # Create display column
+    cp_breakdown['display_id'] = cp_breakdown.apply(
+        lambda r: f"[INTERNAL] {r['_cp_key']}" if r['is_internal'] else r['_cp_key'],
+        axis=1
+    )
     
     # Sort by total volume
     cp_breakdown = cp_breakdown.sort_values('total_volume', ascending=False)
     
-    # Reorder columns
+    # Rename and reorder columns
+    cp_breakdown = cp_breakdown.rename(columns={'_cp_key': 'counterparty'})
+    
     cols = [
-        'display_id', id_col, 'is_new', 'is_internal',
+        'display_id', 'counterparty', 'is_new', 'is_internal',
         'credit_amount', 'credit_count',
         'debit_amount', 'debit_count',
         'net_flow', 'total_volume', 'total_txns'
