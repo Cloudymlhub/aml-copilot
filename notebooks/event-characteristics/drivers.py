@@ -12,6 +12,27 @@ from typing import Dict, List, Optional
 
 
 # =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def _get_counterparty_key(df: pd.DataFrame, id_col: str = 'counterparty_id', account_col: str = 'counterparty_account') -> pd.Series:
+    """Create unified counterparty key: use account if available, else id (for internal)"""
+    df = df.copy()
+    
+    if account_col in df.columns and id_col in df.columns:
+        key = df[account_col].fillna('')
+        mask = key == ''
+        key = key.where(~mask, df[id_col].fillna('UNKNOWN'))
+        return key
+    elif account_col in df.columns:
+        return df[account_col].fillna('UNKNOWN')
+    elif id_col in df.columns:
+        return df[id_col].fillna('UNKNOWN')
+    else:
+        return pd.Series(['UNKNOWN'] * len(df), index=df.index)
+
+
+# =============================================================================
 # TRANSACTION DRIVERS
 # =============================================================================
 
@@ -26,10 +47,7 @@ def largest_transactions(
     if len(event) == 0:
         return pd.DataFrame()
     
-    cols = ['txn_id', 'tran_date', 'amount', 'tran_type', 'counterparty_id', 'is_credit']
-    cols = [c for c in cols if c in event.columns]
-    
-    return event.nlargest(top_n, 'amount')[cols].copy()
+    return event.nlargest(top_n, 'amount').copy()
 
 
 def top_credits(
@@ -48,10 +66,7 @@ def top_credits(
     if len(credits) == 0:
         return pd.DataFrame()
     
-    cols = ['txn_id', 'tran_date', 'amount', 'tran_type', 'counterparty_id']
-    cols = [c for c in cols if c in credits.columns]
-    
-    return credits.nlargest(top_n, 'amount')[cols].copy()
+    return credits.nlargest(top_n, 'amount').copy()
 
 
 def top_debits(
@@ -70,10 +85,7 @@ def top_debits(
     if len(debits) == 0:
         return pd.DataFrame()
     
-    cols = ['txn_id', 'tran_date', 'amount', 'tran_type', 'counterparty_id']
-    cols = [c for c in cols if c in debits.columns]
-    
-    return debits.nlargest(top_n, 'amount')[cols].copy()
+    return debits.nlargest(top_n, 'amount').copy()
 
 
 def new_counterparty_transactions(
@@ -84,20 +96,28 @@ def new_counterparty_transactions(
 ) -> pd.DataFrame:
     """Top transactions with counterparties not seen in baseline"""
     
-    new_cps = shifts.get('new_counterparty_ids', set())
-    
-    if len(event) == 0 or not new_cps:
+    if len(event) == 0:
         return pd.DataFrame()
     
-    new_cp_txns = event[event['counterparty_id'].isin(new_cps)]
+    # Get new counterparties using unified key
+    new_cps = shifts.get('new_counterparty_ids', set())
+    
+    if not new_cps:
+        return pd.DataFrame()
+    
+    # Create unified key for filtering
+    event = event.copy()
+    event['_cp_key'] = _get_counterparty_key(event)
+    
+    new_cp_txns = event[event['_cp_key'].isin(new_cps)]
     
     if len(new_cp_txns) == 0:
         return pd.DataFrame()
     
-    cols = ['txn_id', 'tran_date', 'amount', 'tran_type', 'counterparty_id', 'is_credit']
-    cols = [c for c in cols if c in new_cp_txns.columns]
+    # Drop helper column and return
+    result = new_cp_txns.nlargest(top_n, 'amount').drop(columns=['_cp_key'])
     
-    return new_cp_txns.nlargest(top_n, 'amount')[cols].copy()
+    return result.copy()
 
 
 # =============================================================================
@@ -225,17 +245,19 @@ def top_counterparty_transactions(
     if len(event) == 0:
         return pd.DataFrame()
     
-    top_cps = event.groupby('counterparty_id')['amount'].sum().nlargest(top_n_cp).index.tolist()
+    event = event.copy()
+    event['_cp_key'] = _get_counterparty_key(event)
     
-    subset = event[event['counterparty_id'].isin(top_cps)]
+    top_cps = event.groupby('_cp_key')['amount'].sum().nlargest(top_n_cp).index.tolist()
+    
+    subset = event[event['_cp_key'].isin(top_cps)]
     
     if len(subset) == 0:
         return pd.DataFrame()
     
-    cols = ['txn_id', 'tran_date', 'amount', 'tran_type', 'counterparty_id', 'is_credit']
-    cols = [c for c in cols if c in subset.columns]
+    result = subset.nlargest(top_n_txns, 'amount').drop(columns=['_cp_key'])
     
-    return subset.nlargest(top_n_txns, 'amount')[cols].copy()
+    return result.copy()
 
 
 # =============================================================================

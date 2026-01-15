@@ -28,10 +28,34 @@ def _type_entropy(df: pd.DataFrame) -> float:
     return entropy(type_counts)
 
 
+def _get_counterparty_key(df: pd.DataFrame, id_col: str = 'counterparty_id', account_col: str = 'counterparty_account') -> pd.Series:
+    """Create unified counterparty key: use account if available, else id"""
+    df = df.copy()
+    
+    if account_col in df.columns and id_col in df.columns:
+        key = df[account_col].fillna('')
+        mask = key == ''
+        key = key.where(~mask, df[id_col].fillna('UNKNOWN'))
+        return key
+    elif account_col in df.columns:
+        return df[account_col].fillna('UNKNOWN')
+    elif id_col in df.columns:
+        return df[id_col].fillna('UNKNOWN')
+    else:
+        return pd.Series(['UNKNOWN'] * len(df), index=df.index)
+
+
 def _get_new_counterparties(baseline: pd.DataFrame, event: pd.DataFrame) -> set:
     """Identify counterparties in event window not seen in baseline"""
-    baseline_cps = set(baseline['counterparty_id'].unique())
-    event_cps = set(event['counterparty_id'].unique())
+    
+    baseline_cps = set()
+    if len(baseline) > 0:
+        baseline_cps = set(_get_counterparty_key(baseline).unique())
+    
+    event_cps = set()
+    if len(event) > 0:
+        event_cps = set(_get_counterparty_key(event).unique())
+    
     return event_cps - baseline_cps
 
 
