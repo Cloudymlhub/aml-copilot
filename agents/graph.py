@@ -3,8 +3,9 @@
 from typing import Optional
 from langgraph.graph import StateGraph, END
 
-from .state import AMLCopilotState
-from .subagents import (
+from agents.state import AMLCopilotState
+
+from agents.subagents import (
     create_coordinator_node,
     create_intent_mapper_node,
     create_data_retrieval_node,
@@ -29,8 +30,8 @@ def route_after_coordinator(state: AMLCopilotState) -> str:
 
     if next_agent == "end":
         return END
-    elif next_agent == "aml_alert_reviewer":
-        return "aml_alert_reviewer"
+    # elif next_agent == "aml_alert_reviewer":
+    #     return "aml_alert_reviewer"
     elif next_agent == "compliance_expert":
         return "compliance_expert"
     else:
@@ -54,9 +55,9 @@ def route_after_data_retrieval(state: AMLCopilotState) -> str:
 
     if next_agent == "end":
         return END
-    elif next_agent == "aml_alert_reviewer":
-        # Data was requested by alert reviewer - route back to it
-        return "aml_alert_reviewer"
+    # elif next_agent == "aml_alert_reviewer":
+    #     # Data was requested by alert reviewer - route back to it
+    #     return "aml_alert_reviewer"
     else:
         # Default: copilot mode - route to compliance expert
         return "compliance_expert"
@@ -134,7 +135,7 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     workflow.add_node("data_retrieval", create_data_retrieval_node(agents_config.data_retrieval))
     workflow.add_node("compliance_expert", create_compliance_expert_node(agents_config.compliance_expert))
     workflow.add_node("review_agent", create_review_agent_node(agents_config.review_expert))
-    workflow.add_node("aml_alert_reviewer", create_aml_alert_reviewer_node(agents_config.aml_alert_reviewer))
+    # workflow.add_node("aml_alert_reviewer", create_aml_alert_reviewer_node(agents_config.aml_alert_reviewer))
 
     # Set entry point
     workflow.set_entry_point("coordinator")
@@ -186,7 +187,7 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         {
             "intent_mapper": "intent_mapper",
             "compliance_expert": "compliance_expert",
-            "aml_alert_reviewer": "aml_alert_reviewer",
+            # "aml_alert_reviewer": "aml_alert_reviewer",
             END: END
         }
     )
@@ -196,15 +197,15 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     # - Needs data → intent_mapper → data_retrieval → aml_alert_reviewer (loop)
     # - Analysis complete → END
     # Loop prevention: max_attempts check in alert reviewer prevents infinite loops
-    workflow.add_conditional_edges(
-        "aml_alert_reviewer",
-        route_after_alert_reviewer,
-        {
-            "intent_mapper": "intent_mapper",  # Needs data
-            "aml_alert_reviewer": "aml_alert_reviewer",  # After data retrieval
-            END: END  # Analysis complete
-        }
-    )
+    # workflow.add_conditional_edges(
+    #     "aml_alert_reviewer",
+    #     route_after_alert_reviewer,
+    #     {
+    #         "intent_mapper": "intent_mapper",  # Needs data
+    #         "aml_alert_reviewer": "aml_alert_reviewer",  # After data retrieval
+    #         END: END  # Analysis complete
+    #     }
+    # )
 
     # Intent mapper routes to data retrieval or can end early
     workflow.add_conditional_edges(
@@ -224,7 +225,7 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
         route_after_data_retrieval,
         {
             "compliance_expert": "compliance_expert",  # Copilot mode
-            "aml_alert_reviewer": "aml_alert_reviewer",  # Autonomous mode
+            # "aml_alert_reviewer": "aml_alert_reviewer",  # Autonomous mode
             END: END
         }
     )
@@ -258,3 +259,38 @@ def create_aml_copilot_graph(agents_config: AgentsConfig, checkpointer=None):
     return workflow.compile(checkpointer=checkpointer)
 
 
+# ============================================================================
+# Graph Factory for LangSmith Deployment
+# ============================================================================
+
+def make_graph(config: Optional[dict] = None):
+    """Factory function for LangSmith deployment.
+
+    This function creates a fresh graph instance with runtime configuration.
+    LangSmith calls this function when deploying the graph.
+
+    Args:
+        config: Optional runtime configuration (reserved for future use)
+
+    Returns:
+        Compiled StateGraph ready for invocation
+
+    Usage:
+        # LangSmith deployment (via langgraph.json)
+        graph = make_graph()
+        result = graph.invoke({"messages": [{"role": "user", "content": "..."}]})
+    """
+    from config.settings import settings as app_settings
+
+    # Note: config parameter reserved for future LangSmith runtime configuration
+    # Currently using settings from config.settings
+    _ = config  # Acknowledge parameter to avoid linter warnings
+
+    # Load configuration
+    agents_config = app_settings.get_agents_config()
+
+    # Create and return compiled graph
+    return create_aml_copilot_graph(
+        agents_config=agents_config,
+        checkpointer=None  # LangSmith will handle checkpointing
+    )

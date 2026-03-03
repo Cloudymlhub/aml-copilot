@@ -5,7 +5,7 @@ import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.state import AMLCopilotState, AgentResponse
+from agents.state import AMLCopilotState, AgentResponse, get_user_query
 from agents.base_agent import BaseAgent
 from agents.prompts import REVIEW_AGENT_PROMPT
 from config.agent_config import ReviewAgentConfig
@@ -47,8 +47,9 @@ class ReviewAgent(BaseAgent):
             AgentResponse with review results and routing decision
         """
         self.log_agent_start(state)
-        
-        user_query = state["user_query"]
+
+        # Extract user query (from state or messages)
+        user_query = get_user_query(state)
         final_response = state.get("final_response", "")
         compliance_analysis = state.get("compliance_analysis", {})
         retrieved_data = state.get("retrieved_data", {})
@@ -133,7 +134,7 @@ class ReviewAgent(BaseAgent):
                 "next_agent": "intent_mapper",  # Get more data
                 "current_step": "review_needs_data",
                 "completed": False,
-                "messages": state["messages"]
+                "messages": state.get("messages", [])
             }
         elif review_status == "needs_refinement":
             return {
@@ -144,7 +145,7 @@ class ReviewAgent(BaseAgent):
                 "next_agent": "compliance_expert",  # Retry analysis
                 "current_step": "review_needs_refinement",
                 "completed": False,
-                "messages": state["messages"]
+                "messages": state.get("messages", [])
             }
         elif review_status == "needs_clarification":
             return {
@@ -156,7 +157,7 @@ class ReviewAgent(BaseAgent):
                 "next_agent": "coordinator",  # Ask user for clarification
                 "current_step": "review_needs_clarification",
                 "completed": False,
-                "messages": state["messages"]
+                "messages": state.get("messages", [])
             }
         elif review_status == "human_review":
             return {
@@ -167,7 +168,7 @@ class ReviewAgent(BaseAgent):
                 "next_agent": "end",  # Interrupt for human review
                 "current_step": "review_human_required",
                 "completed": False,
-                "messages": state["messages"]
+                "messages": state.get("messages", [])
             }
         else:
             # Unknown status, default to pass

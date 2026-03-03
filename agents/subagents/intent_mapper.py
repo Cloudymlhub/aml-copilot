@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.intent_mapper_prompt import INTENT_MAPPER_PROMPT
-from agents.state import AMLCopilotState, IntentMapping, AgentResponse
+from agents.state import AMLCopilotState, IntentMapping, AgentResponse, get_user_query
 from agents.base_agent import BaseAgent
 from tools import get_all_tools
 from config.agent_config import AgentConfig
@@ -74,7 +74,8 @@ class IntentMappingAgent(BaseAgent):
             # Use additional_query for replanning
             user_query = additional_query
         else:
-            user_query = state["user_query"]
+            # Extract user query (from state or messages)
+            user_query = get_user_query(state)
         
         # Get formatted conversation history for reference resolution (last 10 messages)
         history_context = self.get_conversation_history(state, formatted=True)

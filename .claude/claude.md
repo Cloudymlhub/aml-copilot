@@ -1,5 +1,20 @@
 # AML Copilot - Multi-Agent Compliance Assistant
 
+## 🚧 ACTIVE DEVELOPMENT - New Architecture Migration (Dec 2024)
+
+**Current Branch**: `feature/langchain-architecture-migration`
+**Status**: Implementing 3-task modernization plan
+**Plan Document**: `/Users/souley/.claude/plans/fizzy-stargazing-kitten.md`
+
+### Migration Goals
+1. **Task 1**: Infrastructure (middleware, LangSmith, Agent UI) - IN PROGRESS
+2. **Task 2**: Modern LangChain agent with sub-agents as tools
+3. **Task 3**: LangSmith evaluation framework
+
+**See "Active Development Tasks" section below for current progress**
+
+---
+
 ## Project Overview
 
 AML Copilot is an intelligent multi-agent system designed to assist AML (Anti-Money Laundering) analysts with compliance investigations, alert reviews, and regulatory reporting. The system operates in two distinct modes:
@@ -489,3 +504,57 @@ When committing:
 ## Contact & Context
 
 This is an internal AML compliance tool for financial institutions. The system is designed to augment, not replace, human AML analysts. All high-risk decisions require human review and approval.
+
+---
+
+## Active Development Tasks (Task 1: Infrastructure)
+
+**Status**: Not started
+**Current Todo**: Create middleware framework
+
+### Task 1 Checklist (13 items)
+
+**Middleware Framework** (6 items):
+- [ ] Create `middleware/base.py`
+- [ ] Create `middleware/logging_middleware.py`
+- [ ] Create `middleware/cost_tracking_middleware.py`
+- [ ] Create `middleware/aml_compliance_middleware.py`
+- [ ] Create `middleware/registry.py`
+- [ ] Create `middleware/__init__.py`
+
+**Configuration** (2 items):
+- [ ] Update `config/settings.py` with LangSmith settings
+- [ ] Create `langgraph.json` for Agent UI
+
+**Testing & Validation** (5 items):
+- [ ] Create `tests/infrastructure/test_mock_agent.py` - Mock agent for testing
+- [ ] Test LangSmith tracing with mock agent (verify traces appear in LangSmith UI)
+- [ ] Test Agent UI with `langgraph dev` (verify graph visualization works)
+- [ ] Test middleware framework with mock agent (verify logging, cost tracking)
+- [ ] Verify cost tracking logs token usage correctly
+
+### Quick Commands to Resume
+
+```bash
+# Check where you are
+cat IMPLEMENTATION_PLAN.md
+
+# View full plan
+cat /Users/souley/.claude/plans/fizzy-stargazing-kitten.md
+
+# Check todos
+# (use Claude's /usage to see current todos)
+
+# Start implementation
+# Begin with: Create middleware/base.py
+```
+
+### Success Criteria for Task 1
+
+- ✅ Middleware executes for any agent call
+- ✅ LangSmith traces appear automatically in UI
+- ✅ `langgraph dev` starts successfully
+- ✅ Cost tracking logs token usage
+- ✅ Mock agent works end-to-end with all infrastructure
+
+**Next**: After Task 1 complete, consult LangChain expert for Task 2 (agents-as-tools implementation)

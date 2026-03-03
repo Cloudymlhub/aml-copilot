@@ -91,7 +91,6 @@ class AMLCopilot:
             # Continue existing conversation
             initial_state: AMLCopilotState = {
                 "messages": previous_state.get("messages", []) + [new_message],
-                "user_query": user_query,
                 "context": context or previous_state.get("context", {}),  # Use provided context or preserve previous
                 "next_agent": "coordinator",  # Always restart from coordinator
                 "current_step": "initialized",
@@ -112,7 +111,6 @@ class AMLCopilot:
             # New conversation
             initial_state: AMLCopilotState = {
                 "messages": [new_message],
-                "user_query": user_query,
                 "context": context or {},
                 "next_agent": "coordinator",
                 "current_step": "initialized",

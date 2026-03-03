@@ -6,7 +6,7 @@ from typing import Literal
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.state import AMLCopilotState, AgentResponse
+from agents.state import AMLCopilotState, AgentResponse, get_user_query
 from agents.base_agent import BaseAgent
 from agents.prompts.aml_alert_reviewer_prompt import (
     ALERT_REVIEW_PROMPT,
@@ -62,7 +62,7 @@ class AMLAlertReviewerAgent(BaseAgent):
         """
         self.log_agent_start(state)
 
-        user_query = state["user_query"]
+        user_query = get_user_query(state)
         intent = state.get("intent", {})
         intent_type = intent.get("intent_type", "") if intent else ""
 
@@ -148,7 +148,7 @@ class AMLAlertReviewerAgent(BaseAgent):
         context = state.get("context", {})
         alert_id = context.get("alert_id")
         cif_no = context.get("cif_no")
-        user_query = state["user_query"]
+        user_query = get_user_query(state)
 
         # Analyze query to determine what data is needed
         query_lower = user_query.lower()
@@ -262,7 +262,7 @@ class AMLAlertReviewerAgent(BaseAgent):
         Returns:
             AgentResponse with disposition decision
         """
-        user_query = state["user_query"]
+        user_query = get_user_query(state)
         retrieved_data = state.get("retrieved_data", {})
         history_context = self.get_conversation_history(state, formatted=True)
 
@@ -352,7 +352,7 @@ class AMLAlertReviewerAgent(BaseAgent):
         Returns:
             AgentResponse with SAR narrative
         """
-        user_query = state["user_query"]
+        user_query = get_user_query(state)
         retrieved_data = state.get("retrieved_data", {})
         history_context = self.get_conversation_history(state, formatted=True)
 
@@ -403,7 +403,7 @@ class AMLAlertReviewerAgent(BaseAgent):
         Returns:
             AgentResponse with pattern analysis
         """
-        user_query = state["user_query"]
+        user_query = get_user_query(state)
         retrieved_data = state.get("retrieved_data", {})
         history_context = self.get_conversation_history(state, formatted=True)
 

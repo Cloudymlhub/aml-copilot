@@ -37,6 +37,12 @@ class Settings(CustomBaseSettings):
     llm_model: str = "gpt-4"  # Deprecated - use per-agent settings
     llm_temperature: float = 0.1  # Deprecated - use per-agent settings
 
+    # LangSmith settings (observability and tracing)
+    langsmith_api_key: Optional[str] = None
+    langsmith_project: str = "aml-copilot"
+    langsmith_tracing_enabled: bool = True  # Enable automatic tracing
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+
     # Per-agent LLM configurations
     coordinator_model: str = "gpt-4o-mini"
     coordinator_temperature: float = 0.0

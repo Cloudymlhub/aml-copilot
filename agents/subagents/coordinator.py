@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.prompts.coordinator_prompt import COORDINATOR_PROMPT
-from agents.state import AMLCopilotState, AgentResponse
+from agents.state import AMLCopilotState, AgentResponse, get_user_query
 from agents.base_agent import BaseAgent
 from config.agent_config import AgentConfig
 from config.settings import settings
@@ -46,8 +46,19 @@ class CoordinatorAgent(BaseAgent):
             AgentResponse with routing decision
         """
         self.log_agent_start(state)
-        
-        user_query = state["user_query"]
+
+        # Extract user query (from state or messages)
+        user_query = get_user_query(state)
+        if not user_query:
+            # Handle empty query gracefully
+            return {
+                "next_agent": "end",
+                "current_step": "no_query",
+                "completed": True,
+                "final_response": "No query provided. Please ask a question about AML compliance.",
+                "messages": self._append_message(state, "[Coordinator] No query provided")
+            }
+
         history_context = self.get_conversation_history(state, formatted=True)  # Get formatted string
 
         def _build_messages(invalid: bool = False):

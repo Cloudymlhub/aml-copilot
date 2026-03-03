@@ -7,7 +7,7 @@ from typing import Dict, Any
 from langchain.tools import BaseTool
 
 from agents.base_agent import BaseAgent
-from agents.state import AMLCopilotState, DataRetrievalResult, AgentResponse
+from agents.state import AMLCopilotState, DataRetrievalResult, AgentResponse, get_user_query
 from config.agent_config import AgentConfig
 from tools import get_all_tools
 
@@ -165,7 +165,7 @@ class DataRetrievalAgent(BaseAgent):
         if "alert_reviewer" in current_step:
             next_agent = "aml_alert_reviewer"
         # Default: copilot mode - route to compliance expert
-        elif state["user_query"]:
+        elif get_user_query(state):
             next_agent = "compliance_expert"
         else:
             next_agent = "end"

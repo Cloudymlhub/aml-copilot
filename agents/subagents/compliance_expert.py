@@ -5,7 +5,7 @@ import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agents.state import AMLCopilotState, ComplianceAnalysis, AgentResponse
+from agents.state import AMLCopilotState, ComplianceAnalysis, AgentResponse, get_user_query
 from agents.base_agent import BaseAgent
 from agents.prompts import COMPLIANCE_EXPERT_PROMPT, RESPONSE_SYNTHESIS_PROMPT
 from config.agent_config import AgentConfig
@@ -47,8 +47,9 @@ class ComplianceExpertAgent(BaseAgent):
             AgentResponse with compliance analysis and final response
         """
         self.log_agent_start(state)
-        
-        user_query = state["user_query"]
+
+        # Extract user query (from state or messages)
+        user_query = get_user_query(state)
         retrieved_data = state.get("retrieved_data")
         intent_payload = state.get("intent", {})
         
@@ -133,7 +134,7 @@ class ComplianceExpertAgent(BaseAgent):
             "next_agent": "review_agent",  # Route to review
             "current_step": "compliance_completed",
             "completed": False,  # Not done until review passes
-            "messages": state["messages"]  # ReviewAgent will decide if we add to messages
+            "messages": state.get("messages", [])  # ReviewAgent will decide if we add to messages
         }
 
 

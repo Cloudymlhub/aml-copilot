@@ -122,14 +122,19 @@ class MLModelOutput(TypedDict):
     typology_red_flags: Dict[str, List[RedFlagDetail]]  # Typology → Red flags → Features
 
 
-class AMLCopilotState(TypedDict):
+class AMLCopilotState(TypedDict, total=False):
     """State for AML Copilot multi-agent system.
 
     This state is shared across all agents in the LangGraph workflow.
+
+    ALL FIELDS ARE OPTIONAL (total=False) to support LangSmith invocation
+    with minimal state. Agents must use .get() for safe state access.
+
+    Note: user_query is DEPRECATED. Use get_user_query(state) to extract
+    from messages instead.
     """
     # Conversation
     messages: List[Message]
-    user_query: str
     
     # Context (NEW in Phase 2)
     context: Dict[str, Any]  # Contains cif_no, alert_id, investigation_id
@@ -196,11 +201,10 @@ class AgentResponse(TypedDict, total=False):
     # Routing
     next_agent: str
     current_step: str
-    
+
     # Conversation
     messages: List[Message]
-    user_query: str
-    
+
     # Context
     context: Dict[str, Any]
     
@@ -298,4 +302,39 @@ def get_conversation_context(
     
     # Negative numbers: treat as 0 (defensive)
     return []
+
+
+def get_user_query(state: AMLCopilotState) -> str:
+    """Extract user query from messages.
+
+    Modern LangGraph pattern: user query is always extracted from the
+    messages list, not from a separate user_query field.
+
+    Args:
+        state: Current state
+
+    Returns:
+        User query string (may be empty if no user messages)
+
+    Examples:
+        >>> # Extract from messages (modern pattern)
+        >>> state = {
+        ...     "messages": [
+        ...         {"role": "user", "content": "What are structuring red flags?", ...}
+        ...     ]
+        ... }
+        >>> query = get_user_query(state)
+        >>> # "What are structuring red flags?"
+
+        >>> # No user messages
+        >>> query = get_user_query({"messages": []})
+        >>> # ""
+    """
+    # Extract from messages (last user message)
+    messages = state.get("messages", [])
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            return msg.get("content", "")
+
+    return ""
 
