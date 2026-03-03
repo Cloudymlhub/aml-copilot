@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import functions as F
 
-from counterparty.counterparty_graph import (
+from counterparty.graph import (
     _build_edge_table,
     _compute_context_df,
     _compute_first_degree,
@@ -128,9 +128,9 @@ class TestPerCustomerDates:
         assert cif_b_count > 0
 
     def test_cif_a_counterparty_count(self, first_degree_df):
-        """CIF-A should have 2 counterparties: CIF-X and ACC-EXT-1 (self-loop removed)."""
+        """CIF-A should have 3 counterparties: CIF-X, ACC-EXT-1, and CIF-A (self-transfer)."""
         count = first_degree_df.filter(F.col("cif_no") == "CIF-A").count()
-        assert count == 2
+        assert count == 3
 
     def test_cif_b_counterparty_count(self, first_degree_df):
         """CIF-B should have 3 counterparties: CIF-X, CIF-Y, ACC-EXT-2."""

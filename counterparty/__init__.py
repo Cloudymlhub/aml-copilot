@@ -1,6 +1,6 @@
 """Counterparty Graph module for AML case review."""
 
-from .counterparty_graph import CounterpartyGraph
+from .graph import CounterpartyGraph
 from .models import (
     BatchMetrics,
     CaseContext,

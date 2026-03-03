@@ -168,6 +168,7 @@ class CounterpartyEntry(BaseModel):
     counterparty_account: str
     counterparty_name: str
     target_is_internal: bool = False
+    is_self_transfer: bool = False
 
     # Relationship & temporal
     relationship: RelationshipProfile = Field(default_factory=RelationshipProfile)

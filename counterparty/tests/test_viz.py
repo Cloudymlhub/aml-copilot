@@ -6,8 +6,8 @@ import tempfile
 
 import pytest
 
-from counterparty.counterparty_graph import CounterpartyGraph
-from counterparty.graph_viz import _results_to_visjs, render_graph_html
+from counterparty.graph import CounterpartyGraph
+from counterparty.viz import _results_to_visjs, render_graph_html
 
 
 @pytest.fixture

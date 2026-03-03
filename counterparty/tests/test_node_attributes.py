@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import functions as F
 
-from counterparty.counterparty_graph import _build_node_attributes
+from counterparty.graph import _build_node_attributes
 
 
 @pytest.fixture

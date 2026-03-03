@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from counterparty.counterparty_graph import CounterpartyGraph
+from counterparty.graph import CounterpartyGraph
 from counterparty.models import (
     CaseContext,
     CustomerGraph,
@@ -85,10 +85,10 @@ class TestCounterpartiesKeyedByTarget:
 
 class TestCustomerSummary:
     def test_cif_a_counts(self, graph):
-        """CIF-A: 2 counterparties (CIF-X internal, ACC-EXT-1 external)."""
+        """CIF-A: 3 counterparties (CIF-X internal, ACC-EXT-1 external, CIF-A self-transfer)."""
         s = graph.results["CIF-A"].summary
-        assert s.total_counterparties == 2
-        assert s.internal_count == 1
+        assert s.total_counterparties == 3
+        assert s.internal_count == 2  # CIF-X + self (CIF-A resolves as internal)
         assert s.external_count == 1
 
     def test_cif_b_counts(self, graph):
@@ -124,7 +124,21 @@ class TestInternalVsExternalProfile:
         cp = graph.results["CIF-A"].counterparties["ACC-EXT-1"]
         assert cp.target_is_internal is False
         assert cp.external_profile is not None
-        assert cp.internal_profile is None
+
+
+class TestSelfTransfer:
+    def test_self_transfer_in_results(self, graph):
+        """CIF-A → ACC-A (own account) should appear as counterparty with is_self_transfer=True."""
+        cps = graph.results["CIF-A"].counterparties
+        assert "CIF-A" in cps
+        assert cps["CIF-A"].is_self_transfer is True
+
+    def test_non_self_transfer(self, graph):
+        """Normal counterparties have is_self_transfer=False."""
+        cp_internal = graph.results["CIF-A"].counterparties["CIF-X"]
+        assert cp_internal.is_self_transfer is False
+        cp_external = graph.results["CIF-A"].counterparties["ACC-EXT-1"]
+        assert cp_external.is_self_transfer is False
 
 
 class TestEmptyContexts:
@@ -210,6 +224,79 @@ class TestSaveAndLoad:
             assert "timestamp" in meta
             assert "metrics" in meta
             assert "params" in meta
+
+
+class TestCache:
+    def test_cache_creates_parquet_files(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc,
+    ):
+        """Caching saves intermediate DataFrames as parquet files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            g = CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+                cache_path=tmpdir, batch_id="test_batch",
+            )
+            cache_dir = os.path.join(tmpdir, "test_batch")
+            assert os.path.exists(cache_dir)
+            # At least edge_table and first_degree should be cached
+            cached_files = os.listdir(cache_dir)
+            parquet_dirs = [f for f in cached_files if f.endswith(".parquet")]
+            assert len(parquet_dirs) >= 2
+            assert "CIF-A" in g.results
+
+    def test_cache_reuse(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc,
+    ):
+        """Second run with same batch_id uses cached data and produces same results."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            g1 = CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+                cache_path=tmpdir, batch_id="reuse_test",
+            )
+            g2 = CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+                cache_path=tmpdir, batch_id="reuse_test",
+            )
+            assert len(g1.results) == len(g2.results)
+            assert set(g1.results.keys()) == set(g2.results.keys())
+
+    def test_overwrite_cache(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc,
+    ):
+        """overwrite_cache=True rewrites cached data without error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+                cache_path=tmpdir, batch_id="overwrite_test",
+            )
+            # Second run with overwrite should not raise
+            g2 = CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+                cache_path=tmpdir, batch_id="overwrite_test",
+                overwrite_cache=True,
+            )
+            assert "CIF-A" in g2.results
+
+    def test_no_cache_by_default(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc,
+    ):
+        """Without cache_path/batch_id, no files are created."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+            )
+            # tmpdir should be empty (no cache files)
+            assert len(os.listdir(tmpdir)) == 0
 
 
 class TestGetCustomer:

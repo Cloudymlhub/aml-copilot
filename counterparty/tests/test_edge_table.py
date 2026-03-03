@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import functions as F
 
-from counterparty.counterparty_graph import _build_edge_table, _compute_context_df
+from counterparty.graph import _build_edge_table, _compute_context_df
 from counterparty.models import GraphParameters
 
 
@@ -82,13 +82,22 @@ class TestInternalFlag:
         assert rows[0]["target_is_internal"] is False
 
 
-class TestSelfLoop:
-    def test_self_loop_removed(self, edge_table):
-        """CIF-A → ACC-A (own account) should be filtered out."""
-        count = edge_table.filter(
+class TestSelfTransfer:
+    def test_self_transfer_present(self, edge_table):
+        """CIF-A → ACC-A (own account) should be present with is_self_transfer=True."""
+        rows = edge_table.filter(
             (F.col("source") == "CIF-A") & (F.col("target") == "CIF-A")
-        ).count()
-        assert count == 0
+        ).collect()
+        assert len(rows) == 1
+        assert rows[0]["is_self_transfer"] is True
+
+    def test_non_self_transfer_flagged_false(self, edge_table):
+        """Normal counterparty edges have is_self_transfer=False."""
+        rows = edge_table.filter(
+            (F.col("source") == "CIF-A") & (F.col("target") == "CIF-X")
+        ).collect()
+        assert len(rows) > 0
+        assert all(r["is_self_transfer"] is False for r in rows)
 
 
 class TestColumns:
@@ -100,6 +109,7 @@ class TestColumns:
             "target_account",
             "target_name",
             "target_is_internal",
+            "is_self_transfer",
             "transaction_date",
             "direction",
             "amount",
