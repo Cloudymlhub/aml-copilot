@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import functions as F
 
-from counterparty.graph import _build_edge_table, _compute_context_df
+from counterparty.compute import _build_edge_table, _compute_context_df
 from counterparty.models import GraphParameters
 
 
