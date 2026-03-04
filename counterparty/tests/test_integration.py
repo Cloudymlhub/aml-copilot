@@ -326,3 +326,163 @@ class TestGetNode:
         node = graph.get_node("CIF-NONEXISTENT")
         assert node is not None
         assert len(node["counterparties"]) == 0
+
+
+# =============================================================================
+# PANDAS ENGINE TESTS
+# =============================================================================
+
+
+@pytest.fixture
+def pandas_graph(
+    spark, sample_transactions, sample_account_master, sample_contexts,
+    sample_risk_scores, sample_labels, sample_kyc, tmp_path,
+):
+    return CounterpartyGraph(
+        spark, sample_transactions, sample_account_master, sample_contexts,
+        risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+        engine="pandas", cache_path=str(tmp_path), batch_id="pd_test",
+    )
+
+
+class TestPandasEngine:
+    """Pandas engine produces same results as Spark."""
+
+    def test_requires_cache(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+    ):
+        """engine='pandas' without cache raises ValueError."""
+        with pytest.raises(ValueError, match="requires cache_path"):
+            CounterpartyGraph(
+                spark, sample_transactions, sample_account_master, sample_contexts,
+                engine="pandas",
+            )
+
+    def test_both_customers_present(self, pandas_graph):
+        assert "CIF-A" in pandas_graph.results
+        assert "CIF-B" in pandas_graph.results
+
+    def test_same_counterparty_counts(self, graph, pandas_graph):
+        """Pandas engine produces same counterparty counts as Spark."""
+        for cif in ["CIF-A", "CIF-B"]:
+            spark_s = graph.results[cif].summary
+            pd_s = pandas_graph.results[cif].summary
+            assert spark_s.total_counterparties == pd_s.total_counterparties, (
+                f"{cif}: total {spark_s.total_counterparties} vs {pd_s.total_counterparties}"
+            )
+            assert spark_s.internal_count == pd_s.internal_count, (
+                f"{cif}: internal {spark_s.internal_count} vs {pd_s.internal_count}"
+            )
+            assert spark_s.external_count == pd_s.external_count, (
+                f"{cif}: external {spark_s.external_count} vs {pd_s.external_count}"
+            )
+
+    def test_same_counterparty_keys(self, graph, pandas_graph):
+        """Both engines discover the same counterparties."""
+        for cif in ["CIF-A", "CIF-B"]:
+            spark_keys = set(graph.results[cif].counterparties.keys())
+            pd_keys = set(pandas_graph.results[cif].counterparties.keys())
+            assert spark_keys == pd_keys, f"{cif}: {spark_keys} vs {pd_keys}"
+
+    def test_same_lifetime_amounts(self, graph, pandas_graph):
+        """Lifetime transaction amounts match between engines."""
+        for cif in ["CIF-A", "CIF-B"]:
+            for target in graph.results[cif].counterparties:
+                spark_lt = graph.results[cif].counterparties[target].lifetime_summary
+                pd_lt = pandas_graph.results[cif].counterparties[target].lifetime_summary
+                assert spark_lt.total_inbound_amount == pytest.approx(pd_lt.total_inbound_amount, abs=0.01), (
+                    f"{cif}→{target}: inbound {spark_lt.total_inbound_amount} vs {pd_lt.total_inbound_amount}"
+                )
+                assert spark_lt.total_outbound_amount == pytest.approx(pd_lt.total_outbound_amount, abs=0.01), (
+                    f"{cif}→{target}: outbound {spark_lt.total_outbound_amount} vs {pd_lt.total_outbound_amount}"
+                )
+
+    def test_same_event_period(self, graph, pandas_graph):
+        """Event period amounts match."""
+        for cif in ["CIF-A", "CIF-B"]:
+            for target in graph.results[cif].counterparties:
+                spark_ev = graph.results[cif].counterparties[target].event_periods.get("event")
+                pd_ev = pandas_graph.results[cif].counterparties[target].event_periods.get("event")
+                if spark_ev and pd_ev:
+                    assert spark_ev.inbound_amount == pytest.approx(pd_ev.inbound_amount, abs=0.01)
+                    assert spark_ev.outbound_amount == pytest.approx(pd_ev.outbound_amount, abs=0.01)
+
+    def test_same_relationship_profile(self, graph, pandas_graph):
+        """Relationship flags match."""
+        for cif in ["CIF-A", "CIF-B"]:
+            for target in graph.results[cif].counterparties:
+                spark_rel = graph.results[cif].counterparties[target].relationship
+                pd_rel = pandas_graph.results[cif].counterparties[target].relationship
+                assert spark_rel.is_bidirectional == pd_rel.is_bidirectional, (
+                    f"{cif}→{target}: bidirectional {spark_rel.is_bidirectional} vs {pd_rel.is_bidirectional}"
+                )
+                assert spark_rel.is_new_in_event_period == pd_rel.is_new_in_event_period
+
+    def test_self_transfer(self, pandas_graph):
+        """Self-transfer detected in pandas engine."""
+        cps = pandas_graph.results["CIF-A"].counterparties
+        assert "CIF-A" in cps
+        assert cps["CIF-A"].is_self_transfer is True
+
+    def test_internal_external_profiles(self, pandas_graph):
+        """Internal/external profiles assigned correctly."""
+        cp_internal = pandas_graph.results["CIF-A"].counterparties["CIF-X"]
+        assert cp_internal.target_is_internal is True
+        assert cp_internal.internal_profile is not None
+
+        cp_external = pandas_graph.results["CIF-A"].counterparties["ACC-EXT-1"]
+        assert cp_external.target_is_internal is False
+        assert cp_external.external_profile is not None
+
+    def test_edge_count(self, pandas_graph):
+        assert pandas_graph.edge_count > 0
+
+    def test_node_count(self, pandas_graph):
+        assert pandas_graph.node_count > 0
+
+    def test_internal_ratio(self, pandas_graph):
+        assert 0.0 <= pandas_graph.internal_ratio <= 1.0
+
+    def test_get_node(self, pandas_graph):
+        node = pandas_graph.get_node("CIF-A")
+        assert node is not None
+        assert len(node["counterparties"]) > 0
+
+    def test_metrics(self, pandas_graph):
+        assert pandas_graph.metrics.total_customers == 2
+        assert pandas_graph.metrics.compute_time_seconds > 0
+
+    def test_save_and_load(self, spark, pandas_graph, tmp_path):
+        """Pandas graph can be saved and loaded back (as Spark)."""
+        save_path = str(tmp_path / "saved_pd_graph")
+        pandas_graph.save(save_path)
+
+        loaded = CounterpartyGraph.load(spark, save_path)
+        assert len(loaded.results) == len(pandas_graph.results)
+        assert set(loaded.results.keys()) == set(pandas_graph.results.keys())
+
+    def test_empty_contexts(self, spark, sample_transactions, sample_account_master, tmp_path):
+        """Empty contexts → empty results with pandas engine too."""
+        g = CounterpartyGraph(
+            spark, sample_transactions, sample_account_master, [],
+            engine="pandas",
+        )
+        assert g.results == {}
+
+    def test_same_hub_detection(self, graph, pandas_graph):
+        """Hub detection matches between engines."""
+        for cif in ["CIF-A", "CIF-B"]:
+            spark_s = graph.results[cif].summary
+            pd_s = pandas_graph.results[cif].summary
+            assert spark_s.hub_counterparties == pd_s.hub_counterparties, (
+                f"{cif}: hubs {spark_s.hub_counterparties} vs {pd_s.hub_counterparties}"
+            )
+
+    def test_same_high_risk(self, graph, pandas_graph):
+        """High risk count matches between engines."""
+        for cif in ["CIF-A", "CIF-B"]:
+            spark_s = graph.results[cif].summary
+            pd_s = pandas_graph.results[cif].summary
+            assert spark_s.high_risk_counterparties == pd_s.high_risk_counterparties, (
+                f"{cif}: high_risk {spark_s.high_risk_counterparties} vs {pd_s.high_risk_counterparties}"
+            )

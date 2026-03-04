@@ -1,15 +1,23 @@
 """
-Graph-first Counterparty Graph — PySpark Implementation
+Graph-first Counterparty Graph — Dual Engine (Spark / Pandas)
 
 Computes counterparty graphs for a batch of AML cases in one pass.
 Identity resolution via account_master, per-customer date windows,
 single-scan edge table for 2nd-degree network analysis.
 
 Usage:
+    # Spark (default, unchanged)
     graph = CounterpartyGraph(
         spark, transactions, account_master, contexts,
         risk_scores=risk_scores, labels=labels, kyc=kyc,
     )
+
+    # Pandas — requires cache (Spark→parquet→pandas bridge)
+    graph = CounterpartyGraph(
+        spark, transactions, account_master, contexts,
+        engine="pandas", cache_path="/cache", batch_id="run_001",
+    )
+
     customer = graph.get_customer("CIF-001")
     graph.visualize(customer_cif="CIF-001", output_path="cif001.html")
     graph.save("/data/graphs/batch_2024_03")
@@ -22,20 +30,15 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional, Union
 
+import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from .cache import _ComputeCache, _cached
-from .compute import (
-    _assemble,
-    _build_edge_table,
-    _build_node_attributes,
-    _compute_context_df,
-    _compute_first_degree,
-    _compute_second_degree,
-)
+from .compute import spark as compute_spark
+from .compute import pandas as compute_pd
 from .models import (
     BatchMetrics,
     CaseContext,
@@ -52,6 +55,12 @@ class CounterpartyGraph:
 
     Computes counterparty graphs for a batch of cases in one pass.
     Results are immediately available via get_customer().
+
+    Args:
+        engine: "spark" (default) or "pandas".
+            - "spark": All compute via PySpark. Works at any scale.
+            - "pandas": Spark extracts data → parquet cache → pandas computes.
+              Requires cache_path + batch_id. Fast for small batches (< 100 CIFs).
     """
 
     def __init__(
@@ -69,11 +78,13 @@ class CounterpartyGraph:
         cache_path: Optional[str] = None,
         batch_id: Optional[str] = None,
         overwrite_cache: bool = False,
+        engine: Literal["spark", "pandas"] = "spark",
     ):
         self._spark = spark
         self._params = params
-        self.edges: Optional[DataFrame] = None
-        self.nodes: Optional[DataFrame] = None
+        self._engine = engine
+        self.edges: Optional[Union[DataFrame, pd.DataFrame]] = None
+        self.nodes: Optional[Union[DataFrame, pd.DataFrame]] = None
         self._results: Dict[str, CustomerGraph] = {}
         self._metrics = BatchMetrics(
             total_customers=len(contexts),
@@ -84,6 +95,12 @@ class CounterpartyGraph:
         if not contexts:
             logger.info("[CounterpartyGraph] No contexts provided, returning empty results")
             return
+
+        if engine == "pandas" and not (cache_path and batch_id):
+            raise ValueError(
+                "engine='pandas' requires cache_path and batch_id "
+                "(Spark extracts data to parquet, pandas reads it)"
+            )
 
         # Initialize cache if enabled
         cache = None
@@ -101,23 +118,46 @@ class CounterpartyGraph:
             f"{cif_list[:5]}{'...' if len(cif_list) > 5 else ''}"
         )
         logger.info(
-            f"[CounterpartyGraph] Params: lifetime={params.lifetime_lookback_months}mo, "
+            f"[CounterpartyGraph] engine={engine}, "
+            f"params: lifetime={params.lifetime_lookback_months}mo, "
             f"network={params.network_lookback_months}mo, hub_threshold={params.hub_threshold}, "
             f"skip_network={skip_network}, skip_compliance={skip_connected_compliance}"
         )
+
+        if engine == "pandas":
+            self._run_pandas(
+                spark, transactions, account_master, contexts, params,
+                risk_scores, labels, kyc,
+                skip_network, skip_connected_compliance, cache,
+            )
+        else:
+            self._run_spark(
+                spark, transactions, account_master, contexts, params,
+                risk_scores, labels, kyc,
+                skip_network, skip_connected_compliance, cache,
+            )
+
+    # --- Engine: Spark ---
+
+    def _run_spark(
+        self,
+        spark, transactions, account_master, contexts, params,
+        risk_scores, labels, kyc,
+        skip_network, skip_connected_compliance, cache,
+    ):
         start_time = time.time()
 
-        # Step 1: Compute per-customer date bounds
+        # Step 1: Context date bounds
         step_start = time.time()
-        context_df = _compute_context_df(spark, contexts, params)
+        context_df = compute_spark._compute_context_df(spark, contexts, params)
         self._metrics.step_times["context_df"] = time.time() - step_start
         logger.info(f"[Step 1/6] Context date bounds computed ({self._metrics.step_times['context_df']:.2f}s)")
 
-        # Step 2: Build edge table (single-scan identity resolution)
+        # Step 2: Edge table
         step_start = time.time()
         self.edges = _cached(
             cache, "edge_table",
-            lambda: _build_edge_table(transactions, account_master, context_df),
+            lambda: compute_spark._build_edge_table(transactions, account_master, context_df),
         )
         self.edges = self.edges.cache()
         self._metrics.transactions_scanned = self.edges.count()
@@ -131,10 +171,8 @@ class CounterpartyGraph:
             f"{internal_edge_count} internal, {self_transfer_count} self-transfers"
         )
 
-        # Step 3: Build node attributes
+        # Step 3: Node attributes
         step_start = time.time()
-        # Single aggregation to collect both source CIFs and internal target CIFs,
-        # instead of two separate .collect() passes over the cached edge table.
         cif_sets = self.edges.agg(
             F.collect_set("source").alias("sources"),
             F.collect_set(
@@ -147,7 +185,7 @@ class CounterpartyGraph:
 
         self.nodes = _cached(
             cache, "node_attrs",
-            lambda: _build_node_attributes(spark, labels, kyc, edge_cifs),
+            lambda: compute_spark._build_node_attributes(spark, labels, kyc, edge_cifs),
         )
         self._metrics.step_times["node_attrs"] = time.time() - step_start
         logger.info(
@@ -156,12 +194,12 @@ class CounterpartyGraph:
             f"labels={'yes' if labels is not None else 'no'}, kyc={'yes' if kyc is not None else 'no'}"
         )
 
-        # Step 4: Compute 1st-degree metrics
+        # Step 4: First-degree metrics
         step_start = time.time()
         customer_cifs = {ctx.cif_no for ctx in contexts}
         first_degree_df = _cached(
             cache, "first_degree",
-            lambda: _compute_first_degree(self.edges, context_df, params, customer_cifs),
+            lambda: compute_spark._compute_first_degree(self.edges, context_df, params, customer_cifs),
         )
         first_degree_count = first_degree_df.count()
         self._metrics.step_times["first_degree"] = time.time() - step_start
@@ -170,11 +208,11 @@ class CounterpartyGraph:
             f"{first_degree_count} customer-counterparty pairs"
         )
 
-        # Step 5: Compute 2nd-degree metrics
+        # Step 5: Second-degree metrics
         step_start = time.time()
         second_degree_df = _cached(
             cache, "second_degree",
-            lambda: _compute_second_degree(
+            lambda: compute_spark._compute_second_degree(
                 self.edges, self.nodes, first_degree_df, context_df,
                 risk_scores, params, skip_network, skip_connected_compliance,
             ),
@@ -187,14 +225,184 @@ class CounterpartyGraph:
             f"risk_scores={'computed' if risk_scores is not None else 'no data'}"
         )
 
-        # Step 6: Assemble results
+        # Step 6: Assemble
         step_start = time.time()
-        self._results = _assemble(
+        self._results = compute_spark._assemble(
             first_degree_df, second_degree_df, self.nodes, contexts, params
         )
         self._metrics.step_times["assemble"] = time.time() - step_start
 
-        # Count counterparties
+        self._finalize_metrics(start_time)
+
+    # --- Engine: Pandas ---
+
+    def _run_pandas(
+        self,
+        spark, transactions, account_master, contexts, params,
+        risk_scores, labels, kyc,
+        skip_network, skip_connected_compliance, cache,
+    ):
+        start_time = time.time()
+
+        # Step 1: Context date bounds (pure Python, no Spark)
+        step_start = time.time()
+        context_df = compute_pd._compute_context_df(contexts, params)
+        self._metrics.step_times["context_df"] = time.time() - step_start
+        logger.info(f"[Step 1/6] Context date bounds computed ({self._metrics.step_times['context_df']:.2f}s)")
+
+        # Step 2: Extract data via Spark → parquet, then read as pandas
+        step_start = time.time()
+        self._extract_to_cache(
+            cache, spark, transactions, account_master, context_df,
+            risk_scores, labels, kyc,
+        )
+        self._metrics.step_times["extraction"] = time.time() - step_start
+        logger.info(f"[Step 2/6] Spark extraction to cache ({self._metrics.step_times['extraction']:.2f}s)")
+
+        # Read extracted data as pandas
+        txns_pd = cache.read_pandas("input_txns")
+        acct_pd = cache.read_pandas("input_account_master")
+        labels_pd = cache.read_pandas("input_labels") if cache.has("input_labels") else None
+        kyc_pd = cache.read_pandas("input_kyc") if cache.has("input_kyc") else None
+        risk_pd = cache.read_pandas("input_risk_scores") if cache.has("input_risk_scores") else None
+
+        # Step 3: Edge table (pandas)
+        step_start = time.time()
+        self.edges = compute_pd._build_edge_table(txns_pd, acct_pd, context_df)
+        self._metrics.transactions_scanned = len(self.edges)
+        self._metrics.step_times["edge_table"] = time.time() - step_start
+
+        internal_edge_count = int(self.edges["target_is_internal"].sum())
+        self_transfer_count = int(self.edges["is_self_transfer"].sum())
+        logger.info(
+            f"[Step 3/6] Edge table built ({self._metrics.step_times['edge_table']:.2f}s): "
+            f"{self._metrics.transactions_scanned} edges, "
+            f"{internal_edge_count} internal, {self_transfer_count} self-transfers"
+        )
+
+        # Step 4: Node attributes (pandas)
+        step_start = time.time()
+        source_cifs = set(self.edges["source"].unique())
+        internal_targets = set(
+            self.edges.loc[self.edges["target_is_internal"], "target"].unique()
+        )
+        edge_cifs = source_cifs | internal_targets
+
+        self.nodes = compute_pd._build_node_attributes(labels_pd, kyc_pd, edge_cifs)
+        self._metrics.step_times["node_attrs"] = time.time() - step_start
+        logger.info(
+            f"[Step 4/6] Node attributes built ({self._metrics.step_times['node_attrs']:.2f}s): "
+            f"{len(edge_cifs)} nodes"
+        )
+
+        # Step 5: First-degree metrics (pandas)
+        step_start = time.time()
+        customer_cifs = {ctx.cif_no for ctx in contexts}
+        first_degree_df = compute_pd._compute_first_degree(
+            self.edges, context_df, params, customer_cifs
+        )
+        self._metrics.step_times["first_degree"] = time.time() - step_start
+        logger.info(
+            f"[Step 5/6] First-degree metrics computed ({self._metrics.step_times['first_degree']:.2f}s): "
+            f"{len(first_degree_df)} customer-counterparty pairs"
+        )
+
+        # Step 6: Second-degree + assemble
+        step_start = time.time()
+        second_degree_df = compute_pd._compute_second_degree(
+            self.edges, self.nodes, first_degree_df, context_df,
+            risk_pd, params, skip_network, skip_connected_compliance,
+        )
+        self._metrics.step_times["second_degree"] = time.time() - step_start
+        logger.info(
+            f"[Step 6/6] Second-degree metrics computed ({self._metrics.step_times['second_degree']:.2f}s)"
+        )
+
+        step_start = time.time()
+        self._results = compute_pd._assemble(
+            first_degree_df, second_degree_df, self.nodes, contexts, params
+        )
+        self._metrics.step_times["assemble"] = time.time() - step_start
+
+        self._finalize_metrics(start_time)
+
+    def _extract_to_cache(
+        self,
+        cache: _ComputeCache,
+        spark: SparkSession,
+        transactions: DataFrame,
+        account_master: DataFrame,
+        context_df: pd.DataFrame,
+        risk_scores: Optional[DataFrame],
+        labels: Optional[DataFrame],
+        kyc: Optional[DataFrame],
+    ):
+        """Use Spark to extract relevant data subsets to parquet for pandas."""
+        # Always write account_master (small)
+        if not cache.has("input_account_master"):
+            cache.write_spark("input_account_master", account_master)
+
+        if not cache.has("input_txns"):
+            # Build Spark context_df for join
+            spark_context = compute_spark._compute_context_df(
+                spark,
+                [CaseContext(cif_no=r["cif_no"], review_date=r["review_date"])
+                 for _, r in context_df.iterrows()],
+                self._params,
+            )
+
+            # Compute broad date window
+            bounds = spark_context.agg(
+                F.min("lifetime_start").alias("broad_start"),
+                F.max("review_date").alias("broad_end"),
+            ).first()
+
+            # Get all CIFs and CP accounts to extract
+            all_cifs = list(context_df["cif_no"])
+
+            # Quick Spark pass to find counterparty accounts
+            broad_txns = transactions.filter(
+                F.col("transaction_date").between(bounds["broad_start"], bounds["broad_end"])
+            )
+            cust_txns = broad_txns.filter(F.col("cif_no").isin(all_cifs))
+            cp_accounts = [
+                r["counterparty_bank_account"]
+                for r in cust_txns.select("counterparty_bank_account").distinct().collect()
+            ]
+
+            # Resolve CP accounts → CIFs
+            cp_cifs = [
+                r["cif_no"]
+                for r in account_master.filter(
+                    F.col("foracid").isin(cp_accounts)
+                ).select("cif_no").distinct().collect()
+            ]
+
+            # Extract: reviewed CIFs + CP CIFs + third-party inbound to CP accounts
+            all_extract_cifs = list(set(all_cifs + cp_cifs))
+            extracted = broad_txns.filter(
+                F.col("cif_no").isin(all_extract_cifs)
+                | F.col("counterparty_bank_account").isin(cp_accounts)
+            ).select(
+                "cif_no", "counterparty_bank_account", "counterparty_name",
+                "transaction_date", "direction", "amount",
+            )
+            cache.write_spark("input_txns", extracted)
+
+        # Optional inputs
+        if labels is not None and not cache.has("input_labels"):
+            # Scope labels to relevant CIFs (will be further filtered in pandas)
+            cache.write_spark("input_labels", labels)
+
+        if kyc is not None and not cache.has("input_kyc"):
+            cache.write_spark("input_kyc", kyc)
+
+        if risk_scores is not None and not cache.has("input_risk_scores"):
+            cache.write_spark("input_risk_scores", risk_scores)
+
+    # --- Shared finalization ---
+
+    def _finalize_metrics(self, start_time: float):
         total_cps = sum(len(cg.counterparties) for cg in self._results.values())
         all_targets = set()
         hub_total = 0
@@ -205,12 +413,10 @@ class CounterpartyGraph:
             high_risk_total += cg.summary.high_risk_counterparties
         self._metrics.total_counterparties = total_cps
         self._metrics.unique_counterparties = len(all_targets)
-
         self._metrics.compute_time_seconds = time.time() - start_time
 
         logger.info(
-            f"[Step 6/6] Results assembled ({self._metrics.step_times['assemble']:.2f}s): "
-            f"{len(self._results)} customers, {total_cps} total counterparties "
+            f"[Results] {len(self._results)} customers, {total_cps} total counterparties "
             f"({len(all_targets)} unique)"
         )
         logger.info(
@@ -249,14 +455,17 @@ class CounterpartyGraph:
         if self.edges is None:
             return None
 
-        # Node attributes
+        if self._engine == "pandas":
+            return self._get_node_pandas(cif_no)
+        return self._get_node_spark(cif_no)
+
+    def _get_node_spark(self, cif_no: str) -> dict:
         node_attrs = {}
         if self.nodes is not None:
             node_rows = self.nodes.filter(F.col("node_cif") == cif_no).collect()
             if node_rows:
                 node_attrs = node_rows[0].asDict()
 
-        # Counterparties (outbound edges from this node)
         cp_rows = (
             self.edges.filter(F.col("source") == cif_no)
             .groupBy("target", "target_name", "target_is_internal")
@@ -276,6 +485,33 @@ class CounterpartyGraph:
                 "total_amount": float(r["total_amount"]) if r["total_amount"] else 0.0,
             }
             for r in cp_rows
+        ]
+
+        return {"node_attrs": node_attrs, "counterparties": counterparties}
+
+    def _get_node_pandas(self, cif_no: str) -> dict:
+        node_attrs = {}
+        if self.nodes is not None:
+            match = self.nodes[self.nodes["node_cif"] == cif_no]
+            if len(match) > 0:
+                node_attrs = match.iloc[0].to_dict()
+
+        cp = self.edges[self.edges["source"] == cif_no]
+        cp_agg = (
+            cp.groupby(["target", "target_name", "target_is_internal"])
+            .agg(txn_count=("amount", "count"), total_amount=("amount", "sum"))
+            .reset_index()
+        )
+
+        counterparties = [
+            {
+                "target": r["target"],
+                "target_name": r["target_name"],
+                "is_internal": bool(r["target_is_internal"]),
+                "txn_count": int(r["txn_count"]),
+                "total_amount": float(r["total_amount"]),
+            }
+            for _, r in cp_agg.iterrows()
         ]
 
         return {"node_attrs": node_attrs, "counterparties": counterparties}
@@ -300,8 +536,6 @@ class CounterpartyGraph:
         logger.info(f"[CounterpartyGraph] Saving to {path} (overwrite={overwrite})")
         os.makedirs(path, exist_ok=True)
 
-        write_mode = "overwrite" if overwrite else "errorifexists"
-
         # Results as JSON
         results_dict = {
             cif: cg.model_dump() for cif, cg in self._results.items()
@@ -311,18 +545,25 @@ class CounterpartyGraph:
 
         # Edge table
         if self.edges is not None:
-            self.edges.write.mode(write_mode).parquet(
-                os.path.join(path, "edges.parquet")
-            )
+            edges_path = os.path.join(path, "edges.parquet")
+            if self._engine == "pandas":
+                self.edges.to_parquet(edges_path, index=False)
+            else:
+                write_mode = "overwrite" if overwrite else "errorifexists"
+                self.edges.write.mode(write_mode).parquet(edges_path)
 
         # Node attributes
         if self.nodes is not None:
-            self.nodes.write.mode(write_mode).parquet(
-                os.path.join(path, "nodes.parquet")
-            )
+            nodes_path = os.path.join(path, "nodes.parquet")
+            if self._engine == "pandas":
+                self.nodes.to_parquet(nodes_path, index=False)
+            else:
+                write_mode = "overwrite" if overwrite else "errorifexists"
+                self.nodes.write.mode(write_mode).parquet(nodes_path)
 
         # Metadata
         metadata = {
+            "engine": self._engine,
             "edge_count": self.edge_count,
             "node_count": self.node_count,
             "timestamp": datetime.now().isoformat(),
@@ -342,6 +583,7 @@ class CounterpartyGraph:
         logger.info(f"[CounterpartyGraph] Loading from {path}")
         instance = cls.__new__(cls)
         instance._spark = spark
+        instance._engine = "spark"  # load always returns Spark mode
         instance._results = {}
 
         # Load results
@@ -394,23 +636,29 @@ class CounterpartyGraph:
 
         return _viz(self._results, customer_cif, title, output_path)
 
-    # --- Graph inspection ---
+    # --- Graph inspection (engine-aware) ---
 
     @property
     def edge_count(self) -> int:
         if self.edges is None:
             return 0
+        if self._engine == "pandas":
+            return len(self.edges)
         return self.edges.count()
 
     @property
     def node_count(self) -> int:
         if self.nodes is None:
             return 0
+        if self._engine == "pandas":
+            return len(self.nodes)
         return self.nodes.count()
 
     @property
     def internal_ratio(self) -> float:
         if self.edges is None or self.edge_count == 0:
             return 0.0
+        if self._engine == "pandas":
+            return float(self.edges["target_is_internal"].sum()) / len(self.edges)
         internal = self.edges.filter(F.col("target_is_internal")).count()
         return internal / self.edge_count

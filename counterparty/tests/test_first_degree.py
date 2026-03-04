@@ -3,7 +3,7 @@
 import pytest
 from pyspark.sql import functions as F
 
-from counterparty.compute import (
+from counterparty.compute.spark import (
     _build_edge_table,
     _compute_context_df,
     _compute_first_degree,

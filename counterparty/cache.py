@@ -6,6 +6,7 @@ import logging
 import os
 from typing import List, Optional
 
+import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,20 @@ class _ComputeCache:
             logger.debug(f"[Cache] Saved '{step}' to {path}")
 
         return result
+
+    def write_spark(self, step: str, df: DataFrame) -> None:
+        """Write Spark DataFrame to cache as parquet."""
+        os.makedirs(self.base_path, exist_ok=True)
+        path = self._step_path(step)
+        mode = "overwrite" if self._overwrite else "errorifexists"
+        df.write.mode(mode).parquet(path)
+        logger.debug(f"[Cache] Wrote Spark DF '{step}' to {path}")
+
+    def read_pandas(self, step: str) -> pd.DataFrame:
+        """Read cached parquet as pandas DataFrame."""
+        path = self._step_path(step)
+        logger.debug(f"[Cache] Reading pandas DF '{step}' from {path}")
+        return pd.read_parquet(path)
 
 
 def _cached(
