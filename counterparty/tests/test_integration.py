@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from counterparty.graph import CounterpartyGraph
+from counterparty.graph import create_counterparty_graph, load_counterparty_graph
 from counterparty.models import (
     CaseContext,
     CustomerGraph,
@@ -21,7 +21,7 @@ def graph(
     spark, sample_transactions, sample_account_master, sample_contexts,
     sample_risk_scores, sample_labels, sample_kyc,
 ):
-    return CounterpartyGraph(
+    return create_counterparty_graph(
         spark, sample_transactions, sample_account_master, sample_contexts,
         risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
     )
@@ -144,7 +144,7 @@ class TestSelfTransfer:
 class TestEmptyContexts:
     def test_empty_contexts(self, spark, sample_transactions, sample_account_master):
         """Empty contexts → empty results, no crash."""
-        g = CounterpartyGraph(
+        g = create_counterparty_graph(
             spark, sample_transactions, sample_account_master, [],
         )
         assert g.results == {}
@@ -200,7 +200,7 @@ class TestSaveAndLoad:
             assert os.path.exists(os.path.join(path, "metadata.json"))
 
             # Load and verify
-            loaded = CounterpartyGraph.load(spark, path)
+            loaded = load_counterparty_graph(spark, path)
             assert len(loaded.results) == len(graph.results)
             assert "CIF-A" in loaded.results
             assert "CIF-B" in loaded.results
@@ -233,7 +233,7 @@ class TestCache:
     ):
         """Caching saves intermediate DataFrames as parquet files."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            g = CounterpartyGraph(
+            g = create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
                 cache_path=tmpdir, batch_id="test_batch",
@@ -252,12 +252,12 @@ class TestCache:
     ):
         """Second run with same batch_id uses cached data and produces same results."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            g1 = CounterpartyGraph(
+            g1 = create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
                 cache_path=tmpdir, batch_id="reuse_test",
             )
-            g2 = CounterpartyGraph(
+            g2 = create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
                 cache_path=tmpdir, batch_id="reuse_test",
@@ -271,13 +271,13 @@ class TestCache:
     ):
         """overwrite_cache=True rewrites cached data without error."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            CounterpartyGraph(
+            create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
                 cache_path=tmpdir, batch_id="overwrite_test",
             )
             # Second run with overwrite should not raise
-            g2 = CounterpartyGraph(
+            g2 = create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
                 cache_path=tmpdir, batch_id="overwrite_test",
@@ -291,7 +291,7 @@ class TestCache:
     ):
         """Without cache_path/batch_id, no files are created."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            CounterpartyGraph(
+            create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
             )
@@ -338,7 +338,7 @@ def pandas_graph(
     spark, sample_transactions, sample_account_master, sample_contexts,
     sample_risk_scores, sample_labels, sample_kyc, tmp_path,
 ):
-    return CounterpartyGraph(
+    return create_counterparty_graph(
         spark, sample_transactions, sample_account_master, sample_contexts,
         risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
         engine="pandas", cache_path=str(tmp_path), batch_id="pd_test",
@@ -353,7 +353,7 @@ class TestPandasEngine:
     ):
         """engine='pandas' without cache raises ValueError."""
         with pytest.raises(ValueError, match="requires cache_path"):
-            CounterpartyGraph(
+            create_counterparty_graph(
                 spark, sample_transactions, sample_account_master, sample_contexts,
                 engine="pandas",
             )
@@ -457,13 +457,13 @@ class TestPandasEngine:
         save_path = str(tmp_path / "saved_pd_graph")
         pandas_graph.save(save_path)
 
-        loaded = CounterpartyGraph.load(spark, save_path)
+        loaded = load_counterparty_graph(spark, save_path)
         assert len(loaded.results) == len(pandas_graph.results)
         assert set(loaded.results.keys()) == set(pandas_graph.results.keys())
 
     def test_empty_contexts(self, spark, sample_transactions, sample_account_master, tmp_path):
         """Empty contexts → empty results with pandas engine too."""
-        g = CounterpartyGraph(
+        g = create_counterparty_graph(
             spark, sample_transactions, sample_account_master, [],
             engine="pandas",
         )

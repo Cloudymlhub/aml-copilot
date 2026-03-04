@@ -1,6 +1,11 @@
 """Counterparty Graph module for AML case review."""
 
-from .graph import CounterpartyGraph
+from .graph import (
+    PandasCounterpartyGraph,
+    SparkCounterpartyGraph,
+    create_counterparty_graph,
+    load_counterparty_graph,
+)
 from .models import (
     BatchMetrics,
     CaseContext,
@@ -12,7 +17,10 @@ from .models import (
 )
 
 __all__ = [
-    "CounterpartyGraph",
+    "create_counterparty_graph",
+    "load_counterparty_graph",
+    "SparkCounterpartyGraph",
+    "PandasCounterpartyGraph",
     "CaseContext",
     "GraphParameters",
     "CounterpartyEntry",

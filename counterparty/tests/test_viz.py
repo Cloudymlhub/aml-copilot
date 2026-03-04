@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from counterparty.graph import CounterpartyGraph
+from counterparty.graph import create_counterparty_graph
 from counterparty.viz import _results_to_visjs, render_graph_html
 
 
@@ -15,7 +15,7 @@ def graph(
     spark, sample_transactions, sample_account_master, sample_contexts,
     sample_risk_scores, sample_labels, sample_kyc,
 ):
-    return CounterpartyGraph(
+    return create_counterparty_graph(
         spark, sample_transactions, sample_account_master, sample_contexts,
         risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
     )
