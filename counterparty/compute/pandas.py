@@ -61,7 +61,17 @@ def _compute_context_df(
             }
         )
 
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+
+    # Convert date columns to datetime64[ns] for parquet round-trip safety
+    date_cols = [
+        "review_date", "event_start", "event_end", "baseline_start",
+        "baseline_end", "lifetime_start", "network_start", "rating_start",
+    ]
+    for col in date_cols:
+        df[col] = pd.to_datetime(df[col])
+
+    return df
 
 
 def _build_edge_table(

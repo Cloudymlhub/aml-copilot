@@ -40,7 +40,7 @@ import pandas as pd
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from .cache import _ComputeCache, _cached
+from .cache import _ComputeCache, _cached, _cached_pandas
 from .compute import spark as compute_spark
 from .compute import pandas as compute_pd
 from .models import (
@@ -293,7 +293,7 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
         step_start = time.time()
         self.edges = _cached(
             cache, "edge_table",
-            lambda: compute_spark._build_edge_table(transactions, account_master, context_df),
+            compute_spark._build_edge_table, transactions, account_master, context_df,
         )
         self.edges = self.edges.cache()
         self._metrics.transactions_scanned = self.edges.count()
@@ -321,7 +321,7 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
 
         self.nodes = _cached(
             cache, "node_attrs",
-            lambda: compute_spark._build_node_attributes(self._spark, labels, kyc, edge_cifs),
+            compute_spark._build_node_attributes, self._spark, labels, kyc, edge_cifs,
         )
         self._metrics.step_times["node_attrs"] = time.time() - step_start
         logger.info(
@@ -335,7 +335,7 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
         customer_cifs = {ctx.cif_no for ctx in contexts}
         first_degree_df = _cached(
             cache, "first_degree",
-            lambda: compute_spark._compute_first_degree(self.edges, context_df, params, customer_cifs),
+            compute_spark._compute_first_degree, self.edges, context_df, params, customer_cifs,
         )
         first_degree_count = first_degree_df.count()
         self._metrics.step_times["first_degree"] = time.time() - step_start
@@ -348,10 +348,9 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
         step_start = time.time()
         second_degree_df = _cached(
             cache, "second_degree",
-            lambda: compute_spark._compute_second_degree(
-                self.edges, self.nodes, first_degree_df, context_df,
-                risk_scores, params, skip_network, skip_connected_compliance,
-            ),
+            compute_spark._compute_second_degree,
+            self.edges, self.nodes, first_degree_df, context_df,
+            risk_scores, params, skip_network, skip_connected_compliance,
         )
         self._metrics.step_times["second_degree"] = time.time() - step_start
         logger.info(
@@ -485,7 +484,10 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
 
         # Step 3: Edge table (pandas)
         step_start = time.time()
-        self.edges = compute_pd._build_edge_table(txns_pd, acct_pd, context_df)
+        self.edges = _cached_pandas(
+            cache, "edge_table",
+            compute_pd._build_edge_table, txns_pd, acct_pd, context_df,
+        )
         self._metrics.transactions_scanned = len(self.edges)
         self._metrics.step_times["edge_table"] = time.time() - step_start
 
@@ -505,7 +507,10 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         )
         edge_cifs = source_cifs | internal_targets
 
-        self.nodes = compute_pd._build_node_attributes(labels_pd, kyc_pd, edge_cifs)
+        self.nodes = _cached_pandas(
+            cache, "node_attrs",
+            compute_pd._build_node_attributes, labels_pd, kyc_pd, edge_cifs,
+        )
         self._metrics.step_times["node_attrs"] = time.time() - step_start
         logger.info(
             f"[Step 4/6] Node attributes built ({self._metrics.step_times['node_attrs']:.2f}s): "
@@ -515,8 +520,9 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         # Step 5: First-degree metrics (pandas)
         step_start = time.time()
         customer_cifs = {ctx.cif_no for ctx in contexts}
-        first_degree_df = compute_pd._compute_first_degree(
-            self.edges, context_df, params, customer_cifs
+        first_degree_df = _cached_pandas(
+            cache, "first_degree",
+            compute_pd._compute_first_degree, self.edges, context_df, params, customer_cifs,
         )
         self._metrics.step_times["first_degree"] = time.time() - step_start
         logger.info(
@@ -526,7 +532,9 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
 
         # Step 6: Second-degree + assemble
         step_start = time.time()
-        second_degree_df = compute_pd._compute_second_degree(
+        second_degree_df = _cached_pandas(
+            cache, "second_degree",
+            compute_pd._compute_second_degree,
             self.edges, self.nodes, first_degree_df, context_df,
             risk_pd, params, skip_network, skip_connected_compliance,
         )
@@ -544,6 +552,54 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         self._finalize_metrics(start_time)
 
     @staticmethod
+    def _extract_txns(
+        spark: SparkSession,
+        transactions: DataFrame,
+        account_master: DataFrame,
+        context_df: pd.DataFrame,
+        params: GraphParameters,
+    ) -> DataFrame:
+        """Extract CIF-scoped transaction subset via Spark."""
+        spark_context = compute_spark._compute_context_df(
+            spark,
+            [CaseContext(cif_no=r["cif_no"], review_date=r["review_date"])
+             for _, r in context_df.iterrows()],
+            params,
+        )
+
+        bounds = spark_context.agg(
+            F.min("lifetime_start").alias("broad_start"),
+            F.max("review_date").alias("broad_end"),
+        ).first()
+
+        all_cifs = list(context_df["cif_no"])
+
+        broad_txns = transactions.filter(
+            F.col("transaction_date").between(bounds["broad_start"], bounds["broad_end"])
+        )
+        cust_txns = broad_txns.filter(F.col("cif_no").isin(all_cifs))
+        cp_accounts = [
+            r["counterparty_bank_account"]
+            for r in cust_txns.select("counterparty_bank_account").distinct().collect()
+        ]
+
+        cp_cifs = [
+            r["cif_no"]
+            for r in account_master.filter(
+                F.col("foracid").isin(cp_accounts)
+            ).select("cif_no").distinct().collect()
+        ]
+
+        all_extract_cifs = list(set(all_cifs + cp_cifs))
+        return broad_txns.filter(
+            F.col("cif_no").isin(all_extract_cifs)
+            | F.col("counterparty_bank_account").isin(cp_accounts)
+        ).select(
+            "cif_no", "counterparty_bank_account", "counterparty_name",
+            "transaction_date", "direction", "amount",
+        )
+
+    @staticmethod
     def _extract_to_cache(
         cache: _ComputeCache,
         spark: SparkSession,
@@ -559,46 +615,11 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         if not cache.has("input_account_master"):
             cache.write_spark("input_account_master", account_master)
 
-        if not cache.has("input_txns"):
-            spark_context = compute_spark._compute_context_df(
-                spark,
-                [CaseContext(cif_no=r["cif_no"], review_date=r["review_date"])
-                 for _, r in context_df.iterrows()],
-                params,
-            )
-
-            bounds = spark_context.agg(
-                F.min("lifetime_start").alias("broad_start"),
-                F.max("review_date").alias("broad_end"),
-            ).first()
-
-            all_cifs = list(context_df["cif_no"])
-
-            broad_txns = transactions.filter(
-                F.col("transaction_date").between(bounds["broad_start"], bounds["broad_end"])
-            )
-            cust_txns = broad_txns.filter(F.col("cif_no").isin(all_cifs))
-            cp_accounts = [
-                r["counterparty_bank_account"]
-                for r in cust_txns.select("counterparty_bank_account").distinct().collect()
-            ]
-
-            cp_cifs = [
-                r["cif_no"]
-                for r in account_master.filter(
-                    F.col("foracid").isin(cp_accounts)
-                ).select("cif_no").distinct().collect()
-            ]
-
-            all_extract_cifs = list(set(all_cifs + cp_cifs))
-            extracted = broad_txns.filter(
-                F.col("cif_no").isin(all_extract_cifs)
-                | F.col("counterparty_bank_account").isin(cp_accounts)
-            ).select(
-                "cif_no", "counterparty_bank_account", "counterparty_name",
-                "transaction_date", "direction", "amount",
-            )
-            cache.write_spark("input_txns", extracted)
+        _cached(
+            cache, "input_txns",
+            PandasCounterpartyGraph._extract_txns,
+            spark, transactions, account_master, context_df, params,
+        )
 
         if labels is not None and not cache.has("input_labels"):
             cache.write_spark("input_labels", labels)
@@ -657,11 +678,17 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
 
     def _save_edges(self, path: str, overwrite: bool) -> None:
         if self.edges is not None:
-            self.edges.to_parquet(os.path.join(path, "edges.parquet"), index=False)
+            self.edges.to_parquet(
+                os.path.join(path, "edges.parquet"), index=False,
+                coerce_timestamps="us", allow_truncated_timestamps=True,
+            )
 
     def _save_nodes(self, path: str, overwrite: bool) -> None:
         if self.nodes is not None:
-            self.nodes.to_parquet(os.path.join(path, "nodes.parquet"), index=False)
+            self.nodes.to_parquet(
+                os.path.join(path, "nodes.parquet"), index=False,
+                coerce_timestamps="us", allow_truncated_timestamps=True,
+            )
 
 
 # =============================================================================

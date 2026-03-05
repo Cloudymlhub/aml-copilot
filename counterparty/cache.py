@@ -7,6 +7,7 @@ Spark's Hadoop filesystem API for path existence checks.
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 from typing import List, Optional
 
 import pandas as pd
@@ -20,6 +21,20 @@ def _join_path(base: str, child: str) -> str:
     return f"{base.rstrip('/')}/{child}"
 
 
+def _normalize_date_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert object-dtype columns containing date/datetime to datetime64[ns].
+
+    This ensures parquet round-trip safety — Python date objects stored as
+    object dtype don't survive parquet serialization cleanly.
+    """
+    for col in df.columns:
+        if df[col].dtype == "object" and len(df) > 0:
+            sample = df[col].dropna().iloc[0] if df[col].notna().any() else None
+            if isinstance(sample, (date, datetime)):
+                df[col] = pd.to_datetime(df[col])
+    return df
+
+
 class _ComputeCache:
     """
     Cache for intermediate DataFrames during computation.
@@ -31,7 +46,7 @@ class _ComputeCache:
 
     Usage:
         cache = _ComputeCache(spark, "/data/cache", "batch_2024_03")
-        df = cache.get_or_compute("edge_table", lambda: expensive_computation())
+        df = cache.get_or_compute("edge_table", expensive_fn, arg1, arg2)
     """
 
     def __init__(
@@ -80,10 +95,14 @@ class _ComputeCache:
             if name.endswith(".parquet")
         ]
 
+    # --- Spark ---
+
     def get_or_compute(
         self,
         step: str,
         compute_fn,
+        *args,
+        **kwargs,
     ) -> Optional[DataFrame]:
         path = self._step_path(step)
 
@@ -92,7 +111,7 @@ class _ComputeCache:
             return self._spark.read.parquet(path)
 
         logger.debug(f"[Cache] Computing '{step}' (not cached)")
-        result = compute_fn()
+        result = compute_fn(*args, **kwargs)
 
         if result is not None:
             write_mode = "overwrite" if self._overwrite else "errorifexists"
@@ -108,6 +127,39 @@ class _ComputeCache:
         df.write.mode(mode).parquet(path)
         logger.debug(f"[Cache] Wrote Spark DF '{step}' to {path}")
 
+    # --- Pandas ---
+
+    def get_or_compute_pandas(
+        self,
+        step: str,
+        compute_fn,
+        *args,
+        **kwargs,
+    ) -> Optional[pd.DataFrame]:
+        path = self._step_path(step)
+
+        if self.has(step):
+            logger.info(f"[Cache] Loading cached pandas '{step}' from {path}")
+            return pd.read_parquet(path)
+
+        logger.debug(f"[Cache] Computing pandas '{step}' (not cached)")
+        result = compute_fn(*args, **kwargs)
+
+        if result is not None:
+            self.write_pandas(step, result)
+
+        return result
+
+    def write_pandas(self, step: str, df: pd.DataFrame) -> None:
+        """Write pandas DataFrame to cache as parquet. Normalizes dates before writing."""
+        path = self._step_path(step)
+        df = _normalize_date_columns(df)
+        df.to_parquet(
+            path, index=False,
+            coerce_timestamps="us", allow_truncated_timestamps=True,
+        )
+        logger.debug(f"[Cache] Wrote pandas DF '{step}' to {path}")
+
     def read_pandas(self, step: str) -> pd.DataFrame:
         """Read cached parquet as pandas DataFrame."""
         path = self._step_path(step)
@@ -116,9 +168,18 @@ class _ComputeCache:
 
 
 def _cached(
-    cache: Optional[_ComputeCache], step: str, compute_fn
+    cache: Optional[_ComputeCache], step: str, compute_fn, *args, **kwargs
 ) -> Optional[DataFrame]:
     """Compute or load from cache. When cache is None, just compute."""
     if cache:
-        return cache.get_or_compute(step, compute_fn)
-    return compute_fn()
+        return cache.get_or_compute(step, compute_fn, *args, **kwargs)
+    return compute_fn(*args, **kwargs)
+
+
+def _cached_pandas(
+    cache: Optional[_ComputeCache], step: str, compute_fn, *args, **kwargs
+) -> Optional[pd.DataFrame]:
+    """Compute or load pandas DF from cache. When cache is None, just compute."""
+    if cache:
+        return cache.get_or_compute_pandas(step, compute_fn, *args, **kwargs)
+    return compute_fn(*args, **kwargs)

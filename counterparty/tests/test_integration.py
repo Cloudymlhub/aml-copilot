@@ -486,3 +486,49 @@ class TestPandasEngine:
             assert spark_s.high_risk_counterparties == pd_s.high_risk_counterparties, (
                 f"{cif}: high_risk {spark_s.high_risk_counterparties} vs {pd_s.high_risk_counterparties}"
             )
+
+
+class TestPandasCache:
+    """Pandas engine caches intermediate pandas DataFrames as parquet."""
+
+    def test_pandas_cache_files_exist(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc, tmp_path,
+    ):
+        """Pandas compute steps are cached as parquet files."""
+        create_counterparty_graph(
+            spark, sample_transactions, sample_account_master, sample_contexts,
+            risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+            engine="pandas", cache_path=str(tmp_path), batch_id="pd_cache_test",
+        )
+        cache_dir = tmp_path / "pd_cache_test"
+        cached_files = [f.name for f in cache_dir.iterdir()]
+        for step in ["edge_table.parquet", "node_attrs.parquet",
+                      "first_degree.parquet", "second_degree.parquet"]:
+            assert step in cached_files, f"Missing cached step: {step}"
+
+    def test_pandas_cache_reuse(
+        self, spark, sample_transactions, sample_account_master, sample_contexts,
+        sample_risk_scores, sample_labels, sample_kyc, tmp_path,
+    ):
+        """Second pandas run with same batch_id loads from cache and produces same results."""
+        kwargs = dict(
+            risk_scores=sample_risk_scores, labels=sample_labels, kyc=sample_kyc,
+            engine="pandas", cache_path=str(tmp_path), batch_id="pd_reuse_test",
+        )
+        g1 = create_counterparty_graph(
+            spark, sample_transactions, sample_account_master, sample_contexts,
+            **kwargs,
+        )
+        g2 = create_counterparty_graph(
+            spark, sample_transactions, sample_account_master, sample_contexts,
+            **kwargs,
+        )
+        assert len(g1.results) == len(g2.results)
+        assert set(g1.results.keys()) == set(g2.results.keys())
+        for cif in g1.results:
+            s1 = g1.results[cif].summary
+            s2 = g2.results[cif].summary
+            assert s1.total_counterparties == s2.total_counterparties
+            assert s1.internal_count == s2.internal_count
+            assert s1.external_count == s2.external_count
