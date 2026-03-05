@@ -62,9 +62,9 @@ class _CounterpartyGraphBase:
     """
     Base for counterparty graph implementations.
 
-    Holds shared state (results, metrics, edges, nodes) and provides
-    results access, save/load, and visualization. Subclasses implement
-    _run() and engine-specific properties.
+    Holds shared state (results, metrics) and provides results access,
+    save/load, and visualization. Subclasses own edges/nodes with
+    engine-specific types and implement _run().
     """
 
     def __init__(
@@ -77,14 +77,28 @@ class _CounterpartyGraphBase:
     ):
         self._spark = spark
         self._params = params
-        self.edges = None
-        self.nodes = None
+        self._contexts = contexts
+        self._skip_network = skip_network
+        self._skip_connected_compliance = skip_connected_compliance
         self._results: Dict[str, CustomerGraph] = {}
         self._metrics = BatchMetrics(
             total_customers=len(contexts),
             skipped_network=skip_network,
             skipped_connected_compliance=skip_connected_compliance,
         )
+
+    @abstractmethod
+    def _run(
+        self,
+        transactions,
+        account_master,
+        risk_scores,
+        labels,
+        kyc,
+        cache,
+    ):
+        """Execute the 6-step computation pipeline. Called by the factory."""
+        ...
 
     # --- Results access ---
 
@@ -179,6 +193,9 @@ class _CounterpartyGraphBase:
         logger.info(f"[CounterpartyGraph] Loading from {path}")
         instance = SparkCounterpartyGraph.__new__(SparkCounterpartyGraph)
         instance._spark = spark
+        instance._contexts = []
+        instance._skip_network = False
+        instance._skip_connected_compliance = False
         instance._results = {}
 
         # Load results
@@ -265,23 +282,32 @@ class _CounterpartyGraphBase:
 class SparkCounterpartyGraph(_CounterpartyGraphBase):
     """PySpark-based counterparty graph. Works at any scale."""
 
-    edges: Optional[DataFrame]
-    nodes: Optional[DataFrame]
+    def __init__(
+        self,
+        spark: SparkSession,
+        contexts: List[CaseContext],
+        params: GraphParameters,
+        skip_network: bool,
+        skip_connected_compliance: bool,
+    ):
+        super().__init__(spark, contexts, params, skip_network, skip_connected_compliance)
+        self.edges: Optional[DataFrame] = None
+        self.nodes: Optional[DataFrame] = None
 
     def _run(
         self,
         transactions: DataFrame,
         account_master: DataFrame,
-        contexts: List[CaseContext],
-        params: GraphParameters,
         risk_scores: Optional[DataFrame],
         labels: Optional[DataFrame],
         kyc: Optional[DataFrame],
-        skip_network: bool,
-        skip_connected_compliance: bool,
         cache: Optional[_ComputeCache],
     ):
         start_time = time.time()
+        contexts = self._contexts
+        params = self._params
+        skip_network = self._skip_network
+        skip_connected_compliance = self._skip_connected_compliance
 
         # Step 1: Context date bounds
         step_start = time.time()
@@ -441,24 +467,32 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
     Spark extracts CIF-scoped data to parquet cache, then pandas does all compute.
     """
 
-    edges: Optional[pd.DataFrame]
-    nodes: Optional[pd.DataFrame]
+    def __init__(
+        self,
+        spark: SparkSession,
+        contexts: List[CaseContext],
+        params: GraphParameters,
+        skip_network: bool,
+        skip_connected_compliance: bool,
+    ):
+        super().__init__(spark, contexts, params, skip_network, skip_connected_compliance)
+        self.edges: Optional[pd.DataFrame] = None
+        self.nodes: Optional[pd.DataFrame] = None
 
     def _run(
         self,
-        spark: SparkSession,
         transactions: DataFrame,
         account_master: DataFrame,
-        contexts: List[CaseContext],
-        params: GraphParameters,
         risk_scores: Optional[DataFrame],
         labels: Optional[DataFrame],
         kyc: Optional[DataFrame],
-        skip_network: bool,
-        skip_connected_compliance: bool,
         cache: _ComputeCache,
     ):
         start_time = time.time()
+        contexts = self._contexts
+        params = self._params
+        skip_network = self._skip_network
+        skip_connected_compliance = self._skip_connected_compliance
 
         # Step 1: Context date bounds (pure Python, no Spark)
         step_start = time.time()
@@ -469,8 +503,8 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         # Step 2: Extract data via Spark → parquet, then read as pandas
         step_start = time.time()
         self._extract_to_cache(
-            cache, spark, transactions, account_master, context_df,
-            params, risk_scores, labels, kyc,
+            cache, transactions, account_master, context_df,
+            risk_scores, labels, kyc,
         )
         self._metrics.step_times["extraction"] = time.time() - step_start
         logger.info(f"[Step 2/6] Spark extraction to cache ({self._metrics.step_times['extraction']:.2f}s)")
@@ -551,20 +585,18 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
 
         self._finalize_metrics(start_time)
 
-    @staticmethod
     def _extract_txns(
-        spark: SparkSession,
+        self,
         transactions: DataFrame,
         account_master: DataFrame,
         context_df: pd.DataFrame,
-        params: GraphParameters,
     ) -> DataFrame:
         """Extract CIF-scoped transaction subset via Spark."""
         spark_context = compute_spark._compute_context_df(
-            spark,
+            self._spark,
             [CaseContext(cif_no=r["cif_no"], review_date=r["review_date"])
              for _, r in context_df.iterrows()],
-            params,
+            self._params,
         )
 
         bounds = spark_context.agg(
@@ -599,14 +631,12 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
             "transaction_date", "direction", "amount",
         )
 
-    @staticmethod
     def _extract_to_cache(
+        self,
         cache: _ComputeCache,
-        spark: SparkSession,
         transactions: DataFrame,
         account_master: DataFrame,
         context_df: pd.DataFrame,
-        params: GraphParameters,
         risk_scores: Optional[DataFrame],
         labels: Optional[DataFrame],
         kyc: Optional[DataFrame],
@@ -617,8 +647,8 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
 
         _cached(
             cache, "input_txns",
-            PandasCounterpartyGraph._extract_txns,
-            spark, transactions, account_master, context_df, params,
+            self._extract_txns,
+            transactions, account_master, context_df,
         )
 
         if labels is not None and not cache.has("input_labels"):
@@ -763,18 +793,10 @@ def create_counterparty_graph(
 
     if engine == "pandas":
         instance = PandasCounterpartyGraph(spark, contexts, params, skip_network, skip_connected_compliance)
-        instance._run(
-            spark, transactions, account_master, contexts, params,
-            risk_scores, labels, kyc,
-            skip_network, skip_connected_compliance, cache,
-        )
+        instance._run(transactions, account_master, risk_scores, labels, kyc, cache)
     else:
         instance = SparkCounterpartyGraph(spark, contexts, params, skip_network, skip_connected_compliance)
-        instance._run(
-            transactions, account_master, contexts, params,
-            risk_scores, labels, kyc,
-            skip_network, skip_connected_compliance, cache,
-        )
+        instance._run(transactions, account_master, risk_scores, labels, kyc, cache)
 
     return instance
 
