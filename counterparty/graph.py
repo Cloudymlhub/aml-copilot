@@ -53,6 +53,19 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _log_df_memory(name: str, df):
+    """Log DataFrame size for memory tracking."""
+    if isinstance(df, pd.DataFrame):
+        mb = df.memory_usage(deep=True).sum() / (1024 * 1024)
+        logger.info(f"[Memory] {name}: {len(df):,} rows, {mb:.1f} MB")
+    elif hasattr(df, "count"):  # Spark DataFrame
+        try:
+            count = df.count()
+            logger.info(f"[Memory] {name}: {count:,} rows (Spark)")
+        except Exception:
+            pass
+
+
 # =============================================================================
 # Base class — shared state, results access, persistence, visualization
 # =============================================================================
@@ -370,6 +383,20 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
             f"{first_degree_count} customer-counterparty pairs"
         )
 
+        # Compact edges for second-degree: drop granular columns no longer needed.
+        # Keep reference to full edges for later restore (get_node/save).
+        full_edges_ref = self.edges
+        if cache is not None:
+            _cached(cache, "full_edges", lambda: full_edges_ref)
+        full_edges_ref.unpersist()
+        self.edges = full_edges_ref.select(
+            "source", "target", "target_is_internal", "transaction_date"
+        ).distinct().cache()
+        compact_count = self.edges.count()
+        logger.info(
+            f"[Memory] Compacted edges: {self._metrics.transactions_scanned} → {compact_count} rows"
+        )
+
         # Step 5: Second-degree metrics
         step_start = time.time()
         second_degree_df = _cached(
@@ -392,6 +419,14 @@ class SparkCounterpartyGraph(_CounterpartyGraphBase):
             first_degree_df, second_degree_df, self.nodes, contexts, params
         )
         self._metrics.step_times["assemble"] = time.time() - step_start
+
+        # Restore full edges for get_node()/save()
+        self.edges.unpersist()
+        if cache is not None and cache.has("full_edges"):
+            self.edges = self._spark.read.parquet(cache._step_path("full_edges"))
+        else:
+            # No cache — restore from lineage reference
+            self.edges = full_edges_ref
 
         self._finalize_metrics(start_time)
 
@@ -516,6 +551,14 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         kyc_pd = cache.read_pandas("input_kyc") if cache.has("input_kyc") else None
         risk_pd = cache.read_pandas("input_risk_scores") if cache.has("input_risk_scores") else None
 
+        # Memory logging for extracted data
+        _log_df_memory("input_txns", txns_pd)
+        _log_df_memory("input_account_master", acct_pd)
+        if labels_pd is not None:
+            _log_df_memory("input_labels", labels_pd)
+        if risk_pd is not None:
+            _log_df_memory("input_risk_scores", risk_pd)
+
         # Step 3: Edge table (pandas)
         step_start = time.time()
         self.edges = _cached_pandas(
@@ -564,6 +607,13 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
             f"{len(first_degree_df)} customer-counterparty pairs"
         )
 
+        # Compact edges for second-degree: drop granular columns no longer needed
+        full_edges = self.edges
+        before_rows = len(self.edges)
+        self.edges = self.edges[["source", "target", "target_is_internal", "transaction_date"]].drop_duplicates()
+        _log_df_memory("compacted_edges", self.edges)
+        logger.info(f"[Memory] Compacted edges: {before_rows} → {len(self.edges)} rows")
+
         # Step 6: Second-degree + assemble
         step_start = time.time()
         second_degree_df = _cached_pandas(
@@ -582,6 +632,9 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
             first_degree_df, second_degree_df, self.nodes, contexts, params
         )
         self._metrics.step_times["assemble"] = time.time() - step_start
+
+        # Restore full edges for get_node()/save()
+        self.edges = full_edges
 
         self._finalize_metrics(start_time)
 
@@ -641,24 +694,48 @@ class PandasCounterpartyGraph(_CounterpartyGraphBase):
         labels: Optional[DataFrame],
         kyc: Optional[DataFrame],
     ):
-        """Use Spark to extract relevant data subsets to parquet for pandas."""
-        if not cache.has("input_account_master"):
-            cache.write_spark("input_account_master", account_master)
-
-        _cached(
+        """Use Spark to extract CIF-scoped data subsets to parquet for pandas."""
+        # Step 1: Extract scoped transactions
+        txns_spark = _cached(
             cache, "input_txns",
             self._extract_txns,
             transactions, account_master, context_df,
         )
 
-        if labels is not None and not cache.has("input_labels"):
-            cache.write_spark("input_labels", labels)
+        # Step 2: Compute relevant CIF set from extracted txns
+        reviewed_cifs = list(context_df["cif_no"])
+        cp_accounts = [
+            r["counterparty_bank_account"]
+            for r in txns_spark.select("counterparty_bank_account").distinct().collect()
+        ]
+        cp_cifs = [
+            r["cif_no"]
+            for r in account_master.filter(
+                F.col("foracid").isin(cp_accounts)
+            ).select("cif_no").distinct().collect()
+        ]
+        relevant_cifs = list(set(reviewed_cifs + cp_cifs))
+        logger.debug(
+            f"[extract] Scoping reference tables to {len(relevant_cifs)} CIFs "
+            f"({len(reviewed_cifs)} reviewed + {len(cp_cifs)} counterparties)"
+        )
 
-        if kyc is not None and not cache.has("input_kyc"):
-            cache.write_spark("input_kyc", kyc)
+        # Step 3: Extract scoped reference tables via get_or_compute
+        def _scope_account_master():
+            return account_master.filter(
+                F.col("cif_no").isin(relevant_cifs) | F.col("foracid").isin(cp_accounts)
+            )
 
-        if risk_scores is not None and not cache.has("input_risk_scores"):
-            cache.write_spark("input_risk_scores", risk_scores)
+        _cached(cache, "input_account_master", _scope_account_master)
+
+        if labels is not None:
+            _cached(cache, "input_labels", lambda: labels.filter(F.col("cif_no").isin(relevant_cifs)))
+
+        if kyc is not None:
+            _cached(cache, "input_kyc", lambda: kyc.filter(F.col("cif_no").isin(relevant_cifs)))
+
+        if risk_scores is not None:
+            _cached(cache, "input_risk_scores", lambda: risk_scores.filter(F.col("cif_no").isin(relevant_cifs)))
 
     # --- Engine-specific properties ---
 

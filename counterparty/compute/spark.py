@@ -113,10 +113,10 @@ def _build_edge_table(
     context_df: DataFrame,
 ) -> DataFrame:
     """
-    Identity resolution with single-scan scope filtering.
+    Identity resolution with two targeted scans (no full-bank cache).
 
-    1. Single broad scan of transactions (date-filtered to widest window)
-    2. Filter 3 subsets from Spark-cached scan (no re-scan of source)
+    1. Scan 1: reviewed CIFs only → discover counterparty accounts/CIFs
+    2. Scan 2: counterparty CIFs + third-party inbound (scoped)
     3. Union + deduplicate + resolve identities via account_master
     """
     base_cols = [
@@ -128,27 +128,23 @@ def _build_edge_table(
         "amount",
     ]
 
-    # --- Single broad scan ---
-    # Use lifetime_start (widest window) to capture all potentially relevant txns
+    # --- Date bounds ---
     bounds_row = context_df.agg(
         F.min("lifetime_start").alias("broad_start"),
         F.max("review_date").alias("broad_end"),
+        F.min("network_start").alias("network_start"),
     ).first()
     broad_start = bounds_row["broad_start"]
     broad_end = bounds_row["broad_end"]
+    network_start = bounds_row["network_start"]
 
-    logger.debug(f"[edge_table] Single scan: broad window {broad_start} → {broad_end}")
-    broad_txns = (
-        transactions.filter(
-            F.col("transaction_date").between(broad_start, broad_end)
-        )
-        .select(base_cols)
-        .cache()
-    )
+    date_filter = F.col("transaction_date").between(broad_start, broad_end)
 
-    # --- Subset (a): Reviewed customers' edges (lifetime window) ---
+    # --- Scan 1: Reviewed customers only (scoped, no full-bank cache) ---
+    logger.debug(f"[edge_table] Scan 1: reviewed CIFs, window {broad_start} → {broad_end}")
     customer_edges = (
-        broad_txns.join(context_df, on="cif_no", how="inner")
+        transactions.filter(date_filter)
+        .join(context_df, on="cif_no", how="inner")
         .filter(
             F.col("transaction_date").between(
                 F.col("lifetime_start"), F.col("review_date")
@@ -178,31 +174,37 @@ def _build_edge_table(
         f"[edge_table] Found {cp_cif_count} internal counterparty CIFs"
     )
 
-    # --- Subsets (b) + (c): Counterparties' transactions (2nd degree) ---
+    # --- Scan 2: Counterparties' transactions (2nd degree, scoped) ---
     if cp_cif_count > 0:
-        # (b) CPs' own outbound transactions — broadcast semi-join on cp CIFs
+        # (b) CPs' own transactions — targeted scan filtered to cp CIFs
+        cp_txn_base = transactions.filter(date_filter)
         cp_own_txns = (
-            broad_txns.join(
+            cp_txn_base.join(
                 F.broadcast(cp_cifs),
-                broad_txns.cif_no == cp_cifs._cp_cif,
+                cp_txn_base.cif_no == cp_cifs._cp_cif,
                 "inner",
             )
             .select(base_cols)
         )
 
         # (c) Non-reviewed customers transacting with our CPs (inbound to CPs).
-        # Broadcast semi-join on cp accounts, then anti-join on reviewed CIFs
-        # to exclude the reviewed customers themselves.
-        reviewed_cif_df = context_df.select(F.col("cif_no").alias("_reviewed_cif"))
+        # Narrower window (network_start) since this is only for hub detection.
+        all_known_cifs = context_df.select(F.col("cif_no").alias("_known_cif")).unionByName(
+            cp_cifs.select(F.col("_cp_cif").alias("_known_cif"))
+        ).distinct()
+
+        inbound_base = transactions.filter(
+            F.col("transaction_date").between(network_start, broad_end)
+        )
         cp_inbound_txns = (
-            broad_txns.join(
+            inbound_base.join(
                 F.broadcast(cp_targets),
-                broad_txns.counterparty_bank_account == cp_targets.counterparty_bank_account,
+                inbound_base.counterparty_bank_account == cp_targets.counterparty_bank_account,
                 "leftsemi",
             )
             .join(
-                F.broadcast(reviewed_cif_df),
-                broad_txns.cif_no == reviewed_cif_df._reviewed_cif,
+                F.broadcast(all_known_cifs),
+                inbound_base.cif_no == all_known_cifs._known_cif,
                 "leftanti",
             )
             .select(base_cols)
@@ -216,14 +218,11 @@ def _build_edge_table(
         cp_account_count = cp_targets.count()
         logger.debug(
             f"[edge_table] {cp_account_count} cp accounts, "
-            f"{cp_cif_count} cp CIFs from broad scan"
+            f"{cp_cif_count} cp CIFs from targeted scans"
         )
     else:
         all_relevant_txns = customer_edges
         logger.debug("[edge_table] No internal counterparties, skipping 2nd degree")
-
-    # Unpersist the broad scan (no longer needed)
-    broad_txns.unpersist()
 
     # --- Resolve identities ---
     acct = account_master.withColumnRenamed("cif_no", "_resolved_cif")
